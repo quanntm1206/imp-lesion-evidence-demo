@@ -290,6 +290,19 @@ def test_audit_rejects_affirmative_claim_after_subordinate_negation(
 @pytest.mark.parametrize(
     "claim",
     [
+        "No method, including ours, is state-of-the-art.",
+        "This is not clinical-grade, diagnostic, or intended for clinical use.",
+    ],
+)
+def test_audit_allows_coordinated_negated_claims(tmp_path: Path, claim: str) -> None:
+    result = audit_paper(make_minimal_paper(tmp_path, claim), REGISTRY)
+
+    assert not any("affirmative protected claim" in error for error in result.errors)
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
         "The protected-test Dice was 0.9019.",
         "The protected-test accuracy was 0.9019.",
         "The protected-test metric was 0.9019.",
@@ -304,6 +317,33 @@ def test_audit_rejects_additional_affirmative_claims(
     result = audit_paper(make_minimal_paper(tmp_path, claim), REGISTRY)
 
     assert any("affirmative protected claim" in error for error in result.errors)
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "The protected-test recall was 0.9019.",
+        "The protected-test HD95 was 0.9019.",
+        "The protected-test precision was 0.9019.",
+        "The protected-test ASSD was 0.9019.",
+        "The protected-test boundary F1 was 0.9019.",
+    ],
+)
+def test_audit_rejects_all_protected_test_metric_claims(
+    tmp_path: Path, claim: str
+) -> None:
+    result = audit_paper(make_minimal_paper(tmp_path, claim), REGISTRY)
+
+    assert any("affirmative protected claim" in error for error in result.errors)
+
+
+def test_audit_allows_sealed_protected_test_metric(tmp_path: Path) -> None:
+    result = audit_paper(
+        make_minimal_paper(tmp_path, "The protected-test recall remains sealed."),
+        REGISTRY,
+    )
+
+    assert not any("affirmative protected claim" in error for error in result.errors)
 
 
 @pytest.mark.parametrize("macro", ["textcite", "parencite", "autocite", "Citep"])

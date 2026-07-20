@@ -40,7 +40,8 @@ _UNFINISHED = re.compile(r"\b(?:TODO|TBD|FIXME|XXX)\b|\?\?")
 _CLAIM_TERMS = re.compile(
     r"state[ -]of[ -]the[ -]art|\bsota\b|statistical(?:ly)?[ -]superior(?:ity)?|"
     r"clinical[- ]grade|clinical validation|clinical system|clinical use|diagnostic(?: claim| system| use)?|"
-    r"protected[- ]test (?:accuracy|dice|iou|bf1|metric|score|performance|result|evidence|claim)|"
+    r"protected[- ]test (?:accuracy|dice|iou|bf1|boundary[- ]f1|precision|recall|hd95|assd|"
+    r"metric|score|performance|result|evidence|claim)|"
     r"significantly outperform(?:s|ed|ing)?|significant improvement|significant superiority",
     re.IGNORECASE,
 )
@@ -116,25 +117,42 @@ def _clauses(text: str) -> Iterable[str]:
 
 def _claim_clauses(text: str) -> Iterable[str]:
     for sentence in _sentences(text):
-        if re.match(r"\s*no\s+\w+\s+is\s+presented\s+as\b", sentence, re.IGNORECASE):
-            yield sentence
+        subordinate = re.match(
+            r"\s*(?:although|while|though|even\s+though)\b(.+?),\s*(.+)",
+            sentence,
+            re.IGNORECASE,
+        )
+        if subordinate:
+            yield subordinate.group(1)
+            yield subordinate.group(2)
             continue
         yield from re.split(
-            r"\s*(?:[,;:]|--|—|\bbut\b|\bhowever\b|\byet\b|\bwhereas\b|\balthough\b|\bwhile\b)\s*",
+            r"\s*(?:;|:|--|—|\bbut\b|\bhowever\b|\byet\b|\bwhereas\b)\s*",
             sentence,
             flags=re.IGNORECASE,
         )
 
 
-def _claim_is_negated(clause: str) -> bool:
-    return bool(_NEGATION.search(clause))
+def _claim_is_negated(clause: str, start: int, end: int) -> bool:
+    if _NEGATION.search(clause[:start]):
+        return True
+    suffix = clause[end:]
+    return bool(
+        re.match(
+            r"\s+(?:remains?|is|are|was|were)\s+(?:sealed|unavailable)\b|"
+            r"\s+(?:is|are|was|were)\s+not\b",
+            suffix,
+            re.IGNORECASE,
+        )
+    )
 
 
 def _check_claims(path: Path, text: str, root: Path, errors: list[str]) -> None:
     for clause in _claim_clauses(text):
-        if _CLAIM_TERMS.search(clause) and not _claim_is_negated(clause):
-            errors.append(f"affirmative protected claim: {_relative(path, root)}")
-            return
+        for match in _CLAIM_TERMS.finditer(clause):
+            if not _claim_is_negated(clause, match.start(), match.end()):
+                errors.append(f"affirmative protected claim: {_relative(path, root)}")
+                return
 
 
 def _check_citations(
