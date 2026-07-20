@@ -1,10 +1,10 @@
 # Runtime and research evidence
-.artifacts/
-runs/
-checkpoints/
-data/
-demo_runtime/
-logs/
+/.artifacts/
+/runs/
+/checkpoints/
+/data/
+/demo_runtime/
+/logs/
 
 # Model and data formats
 *.pt

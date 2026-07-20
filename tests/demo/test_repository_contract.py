@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 import tomllib
 
 
@@ -19,12 +20,21 @@ def test_demo_dependency_and_entry_points_are_declared() -> None:
 def test_gitignore_blocks_private_runtime_assets() -> None:
     text = (ROOT / ".gitignore").read_text(encoding="ascii")
     for pattern in (
-        ".artifacts/",
-        "runs/",
-        "data/",
+        "/.artifacts/",
+        "/runs/",
+        "/data/",
         "*.pt",
         "*.pth",
         ".env",
         ".venv-win/",
     ):
         assert pattern in text
+
+
+def test_compact_demo_evidence_is_not_ignored() -> None:
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", "demo/data/evidence_registry.json"],
+        cwd=ROOT,
+        check=False,
+    )
+    assert result.returncode == 1
