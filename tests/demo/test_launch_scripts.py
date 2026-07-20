@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
 import os
 import re
 import shutil
@@ -34,6 +35,10 @@ def _run_script(relative: Path, *arguments: str) -> subprocess.CompletedProcess[
     )
 
 
+def _powershell_literal(value: Path | str) -> str:
+    return str(value).replace("'", "''")
+
+
 def test_run_demo_is_fail_closed_and_uses_the_cuda_overlay_directly() -> None:
     script = _read("scripts/demo/run_demo.ps1")
 
@@ -47,6 +52,18 @@ def test_run_demo_is_fail_closed_and_uses_the_cuda_overlay_directly() -> None:
     assert "Remove-Item Env:" in script
     assert "& $PythonExe -m lesion_robustness.demo.app" in script
     assert "$LASTEXITCODE" in script
+    for token in (
+        "Invoke-DemoLaunch",
+        "Assert-OwnedSessionPath",
+        "GRADIO_TEMP_DIR",
+        "$env:TMP",
+        "$env:TEMP",
+        "demo_runtime",
+        "sessions",
+        "[guid]::NewGuid()",
+        "Remove-Item -LiteralPath $sessionPath -Recurse -Force",
+    ):
+        assert token in script
 
 
 def test_run_demo_preflight_covers_every_release_binding() -> None:
@@ -108,7 +125,9 @@ def test_demo_runbook_documents_locked_and_fixed_cache_modes() -> None:
         "non-clinical",
         "synthetic",
         "temporary upload",
-        "purge",
+        "launcher-owned",
+        "removed automatically",
+        "sibling",
     ):
         assert token.lower() in readme.lower()
     assert "cloudflared tunnel --url http://127.0.0.1:7860" in readme
@@ -145,6 +164,193 @@ def test_run_demo_preserves_missing_python_exit_code(tmp_path: Path) -> None:
     result = _run_script(script, "-CheckOnly")
 
     assert result.returncode == 2
+
+
+def test_run_demo_removes_only_owned_session_and_restores_environment(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    script = root / "scripts/demo/run_demo.ps1"
+    script.parent.mkdir(parents=True)
+    shutil.copyfile(ROOT / "scripts/demo/run_demo.ps1", script)
+    runtime = root / "demo_runtime"
+    runtime.mkdir()
+    sentinel = runtime / "sibling-sentinel.txt"
+    sentinel.write_text("preserve", encoding="ascii")
+    fake_python = tmp_path / "python.cmd"
+    observation = tmp_path / "app-env.txt"
+    fake_python.write_text(
+        "@echo off\n"
+        "if \"%1\"==\"-\" echo preflight=passed & exit /b 0\n"
+        "> \"%IMP_TEST_OBSERVATION%\" echo GRADIO_TEMP_DIR=%GRADIO_TEMP_DIR%\n"
+        ">> \"%IMP_TEST_OBSERVATION%\" echo TMP=%TMP%\n"
+        ">> \"%IMP_TEST_OBSERVATION%\" echo TEMP=%TEMP%\n"
+        "> \"%GRADIO_TEMP_DIR%\\owned.tmp\" echo temporary\n"
+        "exit /b 0\n",
+        encoding="ascii",
+    )
+    command = (
+        f". '{_powershell_literal(script)}'; "
+        "$env:GRADIO_TEMP_DIR='before-gradio'; $env:TMP='before-tmp'; "
+        "$env:TEMP='before-temp'; "
+        f"$env:IMP_TEST_OBSERVATION='{_powershell_literal(observation)}'; "
+        f"$code=Invoke-DemoLaunch -Device cpu -Root '{_powershell_literal(root)}' "
+        f"-PythonExe '{_powershell_literal(fake_python)}'; "
+        "[pscustomobject]@{code=$code;gradio=$env:GRADIO_TEMP_DIR;tmp=$env:TMP;"
+        "temp=$env:TEMP} | ConvertTo-Json -Compress"
+    )
+
+    result = subprocess.run(
+        [
+            _powershell(),
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            command,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "preflight=passed" in result.stdout
+    state = json.loads(result.stdout.strip().splitlines()[-1])
+    assert state == {
+        "code": 0,
+        "gradio": "before-gradio",
+        "tmp": "before-tmp",
+        "temp": "before-temp",
+    }
+    observed = dict(
+        line.split("=", 1)
+        for line in observation.read_text(encoding="ascii").splitlines()
+    )
+    assert observed["GRADIO_TEMP_DIR"] == observed["TMP"] == observed["TEMP"]
+    session = Path(observed["GRADIO_TEMP_DIR"])
+    assert session.parent == runtime / "sessions"
+    assert session.name.startswith("demo-")
+    assert not session.exists()
+    assert sentinel.read_text(encoding="ascii") == "preserve"
+
+
+def test_owned_session_guard_rejects_equal_outside_and_traversal_paths(
+    tmp_path: Path,
+) -> None:
+    runtime = tmp_path / "demo_runtime"
+    valid = runtime / "sessions" / "demo-00000000000000000000000000000000"
+    session_parent = runtime / "sessions"
+    sibling = runtime / "sibling"
+    malformed = session_parent / "demo-not-a-guid"
+    outside = tmp_path / "outside"
+    valid.mkdir(parents=True)
+    sibling.mkdir()
+    malformed.mkdir()
+    outside.mkdir()
+    junction_runtime = tmp_path / "junction_runtime"
+    junction_target = tmp_path / "junction_target"
+    junction_runtime.mkdir()
+    junction_target.mkdir()
+    junction = junction_runtime / "sessions"
+    junction_result = subprocess.run(
+        [
+            _powershell(),
+            "-NoProfile",
+            "-Command",
+            f"New-Item -ItemType Junction -Path '{_powershell_literal(junction)}' "
+            f"-Target '{_powershell_literal(junction_target)}' | Out-Null",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert junction_result.returncode == 0, junction_result.stderr
+    junction_session = junction / "demo-11111111111111111111111111111111"
+    (junction_target / junction_session.name).mkdir()
+    command = (
+        f". '{_powershell_literal(ROOT / 'scripts/demo/run_demo.ps1')}'; "
+        f"$runtime='{_powershell_literal(runtime)}'; "
+        f"$valid='{_powershell_literal(valid)}'; "
+        f"$sessionParent='{_powershell_literal(session_parent)}'; "
+        f"$sibling='{_powershell_literal(sibling)}'; "
+        f"$malformed='{_powershell_literal(malformed)}'; "
+        f"$outside='{_powershell_literal(outside)}'; "
+        f"$junctionRuntime='{_powershell_literal(junction_runtime)}'; "
+        f"$junctionSession='{_powershell_literal(junction_session)}'; "
+        "$accepted=[bool](Assert-OwnedSessionPath -SessionPath $valid -RuntimeRoot $runtime); "
+        "$cases=@(@($runtime,$runtime),@($outside,$runtime),"
+        "@((Join-Path $valid '..\\..\\..\\outside'),$runtime),"
+        "@($sessionParent,$runtime),@($sibling,$runtime),@($malformed,$runtime),"
+        "@($junctionSession,$junctionRuntime)); $rejected=@(); foreach($case in $cases){"
+        "try{Assert-OwnedSessionPath -SessionPath $case[0] -RuntimeRoot $case[1] | Out-Null;"
+        "$rejected += $false}catch{$rejected += $true}}; "
+        "[pscustomobject]@{accepted=$accepted;rejected=$rejected} | ConvertTo-Json -Compress"
+    )
+
+    result = subprocess.run(
+        [
+            _powershell(),
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            command,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout.strip().splitlines()[-1])
+    assert payload == {
+        "accepted": True,
+        "rejected": [True, True, True, True, True, True, True],
+    }
+
+
+@pytest.mark.parametrize(("app_exit", "expected"), [(0, 5), (7, 7)])
+def test_cleanup_failure_is_nonzero_and_preserves_existing_app_failure(
+    tmp_path: Path, app_exit: int, expected: int
+) -> None:
+    root = tmp_path / "repo"
+    (root / "demo_runtime").mkdir(parents=True)
+    fake_python = tmp_path / "python.cmd"
+    fake_python.write_text(
+        "@echo off\n"
+        "if \"%1\"==\"-\" echo preflight=passed & exit /b 0\n"
+        "exit /b %IMP_TEST_APP_EXIT%\n",
+        encoding="ascii",
+    )
+    script = ROOT / "scripts/demo/run_demo.ps1"
+    command = (
+        f". '{_powershell_literal(script)}'; "
+        f"$env:IMP_TEST_APP_EXIT='{app_exit}'; $script:guardCalls=0; "
+        "function Assert-OwnedSessionPath { param($SessionPath,$RuntimeRoot) "
+        "$script:guardCalls++; if($script:guardCalls -gt 1){throw 'simulated cleanup failure'} "
+        "[pscustomobject]@{RuntimeRoot=$RuntimeRoot;SessionPath=$SessionPath} }; "
+        f"Invoke-DemoLaunch -Device cpu -Root '{_powershell_literal(root)}' "
+        f"-PythonExe '{_powershell_literal(fake_python)}'"
+    )
+
+    result = subprocess.run(
+        [
+            _powershell(),
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            command,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert int(result.stdout.strip().splitlines()[-1]) == expected
+    assert "cleanup failed closed" in result.stderr.lower()
 
 
 def test_tunnel_preserves_health_failure_exit_code() -> None:

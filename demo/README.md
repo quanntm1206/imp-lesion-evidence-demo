@@ -31,7 +31,7 @@ cloudflared tunnel --url http://127.0.0.1:7860
 
 The generated URL is temporary. Never add the URL, tunnel output, tokens, uploads, caches, weights, or runtime receipts to Git. Complete the authorized rehearsal, then press `Ctrl+C` in the tunnel terminal. Press `Ctrl+C` in the demo terminal afterward. Confirm port 7860 and both processes are closed.
 
-The quick tunnel is unauthenticated. Use only non-sensitive synthetic or already-public rehearsal images. Assume a submitted image may reach the operator host and Gradio temporary storage. After stopping both processes, purge temporary upload files created during the rehearsal; never reuse clinical, identifying, or confidential images.
+The quick tunnel is unauthenticated. Use only non-sensitive synthetic or already-public rehearsal images. Assume a submitted image may reach the operator host. For every app launch, the launcher creates a unique launcher-owned child under `demo_runtime/sessions` and scopes all Gradio temporary upload storage to that child. The prior environment is restored and the child is removed automatically when the app stops. A containment check runs again immediately before deletion; sibling runtime files and global temporary storage are never removed. Cleanup failure exits nonzero. Never reuse clinical, identifying, or confidential images.
 
 ## Evidence limits
 
