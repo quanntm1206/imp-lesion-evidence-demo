@@ -55,7 +55,7 @@ try {
     New-Item -ItemType Directory -Force -Path $ReceiptDir | Out-Null
 
     # --no-sync prevents later commands from replacing an explicit CUDA overlay.
-    uv run --no-sync --python 3.12 pytest tests/demo -q
+    uv run --no-sync --python 3.12 python -m pytest tests/demo -q
     Assert-LastExitCode 'demo test suite'
 
     uv run --no-sync --python 3.12 python scripts/paper/build_clean_v3_tables.py --registry $Registry --paper-dir $GeneratedPaperDir

@@ -31,7 +31,7 @@ jobs:
       - name: Run demo tests
         run: |
           mkdir -p ci-receipts
-          uv run --no-sync --python 3.12 pytest tests/demo -q --junitxml=ci-receipts/pytest.xml
+          uv run --no-sync --python 3.12 python -m pytest tests/demo -q --junitxml=ci-receipts/pytest.xml
 
       - name: Rebuild deterministic paper tables
         run: |

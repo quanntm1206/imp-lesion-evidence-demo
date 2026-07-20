@@ -27,7 +27,7 @@ def test_windows_bootstrap_preserves_cuda_overlay_and_runs_delivery_checks() -> 
     assert "https://download.pytorch.org/whl/cu130/" in script
     assert "torch.cuda.is_available()" in script
     assert "uv run --no-sync" in script
-    assert "tests/demo" in script
+    assert "python -m pytest tests/demo" in script
     assert "build_clean_v3_tables.py" in script
     assert "$GeneratedPaperDir" in script
     assert "--paper-dir $GeneratedPaperDir" in script
@@ -55,7 +55,7 @@ def test_ci_is_cpu_only_reproducible_and_uploads_receipts() -> None:
         str(step.get("run", "")) for step in job["steps"] if "run" in step
     )
     assert "--python 3.12" in commands
-    assert "pytest tests/demo" in commands
+    assert "python -m pytest tests/demo" in commands
     assert "build_clean_v3_tables.py" in commands
     assert "--paper-dir ci-receipts/generated-paper" in commands
     assert "cmp" in commands
