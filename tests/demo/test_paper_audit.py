@@ -102,6 +102,14 @@ def test_audit_rejects_unsupported_result_number(tmp_path: Path) -> None:
     assert any("unsupported numeric result" in error for error in result.errors)
 
 
+def test_audit_rejects_dataset_count_as_a_metric_value(tmp_path: Path) -> None:
+    paper = make_minimal_paper(tmp_path, "Robust Dice was 430.")
+
+    result = audit_paper(paper, REGISTRY)
+
+    assert any("unsupported numeric result" in error for error in result.errors)
+
+
 def test_audit_rejects_registry_source_hash_drift(tmp_path: Path) -> None:
     payload = json.loads(REGISTRY.read_text(encoding="ascii"))
     payload["sources"][0]["sha256"] = "0" * 64
@@ -124,6 +132,74 @@ def test_audit_rejects_manifest_figure_hash_drift(tmp_path: Path) -> None:
 
     assert not result.passed
     assert any("figure hash drift" in error for error in result.errors)
+
+
+def test_audit_requires_editable_source_hash(tmp_path: Path) -> None:
+    paper = _copy_paper(tmp_path)
+    manifest_path = paper / "artifact_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="ascii"))
+    del manifest["figures"]["evidence_pipeline"]["editable_source_sha256"]
+    manifest_path.write_text(json.dumps(manifest), encoding="ascii")
+
+    result = audit_paper(paper, REGISTRY)
+
+    assert "missing source hash" in result.errors
+
+
+def test_audit_rejects_manifest_path_outside_paper(tmp_path: Path) -> None:
+    paper = _copy_paper(tmp_path)
+    outside = tmp_path / "outside.pdf"
+    outside.write_bytes(b"outside")
+    manifest_path = paper / "artifact_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="ascii"))
+    entry = manifest["figures"]["loop206_delta"]
+    entry["path"] = "../outside.pdf"
+    entry["sha256"] = hashlib.sha256(outside.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="ascii")
+
+    result = audit_paper(paper, REGISTRY)
+
+    assert "unsafe manifest path" in result.errors
+
+
+def test_audit_reconciles_declared_figure_input(tmp_path: Path) -> None:
+    paper = _copy_paper(tmp_path)
+    main = paper / "main.tex"
+    main.write_text(
+        main.read_text(encoding="utf-8").replace(
+            "\\end{document}", "\\includegraphics{figures/unmapped.pdf}\n\\end{document}"
+        ),
+        encoding="utf-8",
+    )
+
+    result = audit_paper(paper, REGISTRY)
+
+    assert any("unmapped figure input" in error for error in result.errors)
+
+
+def test_audit_reconciles_declared_table_input(tmp_path: Path) -> None:
+    paper = _copy_paper(tmp_path)
+    main = paper / "main.tex"
+    main.write_text(
+        main.read_text(encoding="utf-8").replace(
+            "\\end{document}", "\\input{tables/unmapped}\n\\end{document}"
+        ),
+        encoding="utf-8",
+    )
+
+    result = audit_paper(paper, REGISTRY)
+
+    assert any("unmapped table input" in error for error in result.errors)
+
+
+def test_audit_scans_nested_tex_claims(tmp_path: Path) -> None:
+    paper = _copy_paper(tmp_path)
+    nested = paper / "sections/nested_claim.tex"
+    nested.write_text("Robust Dice was 0.7777.\n", encoding="ascii")
+
+    result = audit_paper(paper, REGISTRY)
+
+    assert any("unsupported numeric result" in error for error in result.errors)
 
 
 def test_audit_rejects_unlabeled_loop170_values(tmp_path: Path) -> None:
@@ -155,6 +231,38 @@ def test_audit_rejects_metrics_without_ground_truth_authorization(
 
     assert not result.passed
     assert "hidden no-GT metrics" in result.errors
+
+
+def test_audit_rejects_affirmative_clause_after_negated_clause(tmp_path: Path) -> None:
+    paper = make_minimal_paper(
+        tmp_path, "The baseline is not SOTA, but ours is state-of-the-art."
+    )
+
+    result = audit_paper(paper, REGISTRY)
+
+    assert any("affirmative protected claim" in error for error in result.errors)
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "The protected-test Dice was 0.9019.",
+        "The candidate significantly outperforms the baseline.",
+    ],
+)
+def test_audit_rejects_additional_affirmative_claims(
+    tmp_path: Path, claim: str
+) -> None:
+    result = audit_paper(make_minimal_paper(tmp_path, claim), REGISTRY)
+
+    assert any("affirmative protected claim" in error for error in result.errors)
+
+
+@pytest.mark.parametrize("macro", ["textcite", "parencite", "autocite", "Citep"])
+def test_audit_rejects_undefined_generic_cite_macro(tmp_path: Path, macro: str) -> None:
+    result = audit_paper(make_minimal_paper(tmp_path, f"\\{macro}{{missing_key}}"), REGISTRY)
+
+    assert any("undefined citation key" in error for error in result.errors)
 
 
 def test_cli_returns_nonzero_and_writes_path_free_failure_receipt(tmp_path: Path) -> None:

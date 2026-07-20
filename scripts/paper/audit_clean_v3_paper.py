@@ -14,20 +14,33 @@ from lesion_robustness.evidence_registry import validate_registry
 
 
 _CITATION = re.compile(
-    r"\\cite[a-zA-Z*]*\s*(?:\[[^]]*\]\s*){0,2}\{([^}]+)\}"
+    r"\\[a-z]*cite[a-z]*\*?\s*(?:\[[^]]*\]\s*)*\{([^}]+)\}",
+    re.IGNORECASE,
 )
 _BIB_KEY = re.compile(r"@\w+\s*\{\s*([^,\s]+)", re.IGNORECASE)
 _NUMBER = re.compile(r"(?<![A-Za-z_0-9])[-+]?\d[\d,]*(?:\.\d+)?(?:[eE][-+]?\d+)?")
-_RESULT_TERMS = re.compile(
-    r"robust[- ]?(?:dice|iou)|boundary[- ]?f1|(?:^|\W)(?:dice|iou|precision|recall|hd95|assd)(?:\W|$)|"
-    r"point estimate|confidence interval|candidate-minus-control|\bdelta\b",
+_METRIC = re.compile(
+    r"robust[- ]?dice|clean[- ]?dice|boundary[- ]?f1|robust[- ]?iou|"
+    r"(?:^|\W)(?:dice|iou|precision|recall|hd95|assd)(?:\W|$)",
     re.IGNORECASE,
 )
+_RESULT_SIGNAL = re.compile(
+    r"point estimate|confidence interval|candidate-minus-control|\bdelta\b|"
+    r"obtained|was|were|is|are|higher|lower|reduces?|increases?|decreases?|changes?|"
+    r"improvement|difference|versus|\bci\b",
+    re.IGNORECASE,
+)
+_PROTOCOL = re.compile(r"seed|group|resample|corruption", re.IGNORECASE)
+_INCLUDE_GRAPHICS = re.compile(
+    r"\\includegraphics(?:\s*\[[^]]*\])?\s*\{([^}]+)\}"
+)
+_TABLE_INPUT = re.compile(r"\\input\s*\{(tables/[^}]+)\}")
 _UNFINISHED = re.compile(r"\b(?:TODO|TBD|FIXME|XXX)\b|\?\?")
 _CLAIM_TERMS = re.compile(
     r"state[ -]of[ -]the[ -]art|\bsota\b|statistical(?:ly)?[ -]superior(?:ity)?|"
     r"clinical[- ]grade|clinical validation|clinical system|clinical use|diagnostic(?: claim| system| use)?|"
-    r"protected[- ]test (?:result|evidence|claim)",
+    r"protected[- ]test (?:dice|performance|result|evidence|claim)|"
+    r"significantly outperforms|significant improvement|significant superiority",
     re.IGNORECASE,
 )
 _NEGATION = re.compile(
@@ -75,66 +88,33 @@ def _relative(path: Path, root: Path) -> str:
         return path.name
 
 
-def _walk_numbers(value: object) -> Iterable[float]:
-    if isinstance(value, bool):
-        return
-    if isinstance(value, (int, float)):
-        yield float(value)
-    elif isinstance(value, dict):
-        for item in value.values():
-            yield from _walk_numbers(item)
-    elif isinstance(value, list):
-        for item in value:
-            yield from _walk_numbers(item)
-
-
-def _supported_numbers(registry: dict[str, Any]) -> set[float]:
-    values = set(_walk_numbers(registry))
-    values.update(abs(value) for value in tuple(values))
-    observations = registry.get("observations", [])
-    metric_fields = (
-        "robust_dice",
-        "robust_iou",
-        "robust_precision",
-        "robust_recall",
-        "robust_bf1",
-    )
-    if isinstance(observations, list):
-        for left in observations:
-            if not isinstance(left, dict):
-                continue
-            for right in observations:
-                if not isinstance(right, dict):
-                    continue
-                for field in metric_fields:
-                    left_value = left.get(field)
-                    right_value = right.get(field)
-                    if isinstance(left_value, (int, float)) and isinstance(
-                        right_value, (int, float)
-                    ):
-                        values.add(abs(float(left_value) - float(right_value)))
-    return values
-
-
-def _number_is_supported(token: str, supported: set[float]) -> bool:
+def _number_is_supported(token: str, supported: Iterable[float]) -> bool:
     value = float(token.replace(",", ""))
     if value in {95.0}:  # Confidence-level notation, not an empirical result.
         return True
-    tolerance = max(0.00006, abs(value) * 1e-10)
-    return any(abs(value - candidate) <= tolerance for candidate in supported)
+    for candidate in supported:
+        for transformed in (candidate, abs(candidate), round(candidate, 4), round(abs(candidate), 4)):
+            if value == transformed:
+                return True
+    return False
 
 
 def _sentences(text: str) -> Iterable[str]:
     return re.split(r"(?<=[.!?])\s+|\n+", text)
 
 
-def _claim_is_negated(sentence: str) -> bool:
-    return bool(_NEGATION.search(sentence))
+def _clauses(text: str) -> Iterable[str]:
+    for sentence in _sentences(text):
+        yield from re.split(r"\s*(?:;|\bbut\b|\bhowever\b|\byet\b|\bwhereas\b)\s*", sentence, flags=re.IGNORECASE)
+
+
+def _claim_is_negated(clause: str) -> bool:
+    return bool(_NEGATION.search(clause))
 
 
 def _check_claims(path: Path, text: str, root: Path, errors: list[str]) -> None:
-    for sentence in _sentences(text):
-        if _CLAIM_TERMS.search(sentence) and not _claim_is_negated(sentence):
+    for clause in _clauses(text):
+        if _CLAIM_TERMS.search(clause) and not _claim_is_negated(clause):
             errors.append(f"affirmative protected claim: {_relative(path, root)}")
             return
 
@@ -169,6 +149,12 @@ def _check_manifest(
         return None
     if manifest.get("evidence_registry_sha256") != registry.get("registry_sha256"):
         errors.append("missing evidence mapping")
+    registry_path = manifest.get("evidence_registry_path")
+    registry_hash = manifest.get("evidence_registry_sha256")
+    if not isinstance(registry_path, str) or not isinstance(registry_hash, str):
+        errors.append("missing evidence mapping")
+    elif _resolve_contained(root, registry_path) is None:
+        errors.append("unsafe manifest path")
     for category, label in (("figures", "figure"), ("tables", "table")):
         entries = manifest.get(category, {})
         if not isinstance(entries, dict):
@@ -178,32 +164,37 @@ def _check_manifest(
             if not isinstance(entry, dict):
                 errors.append(f"invalid {label} manifest entry")
                 continue
-            _check_hashed_artifact(paper, entry, "path", "sha256", label, errors)
-            _check_hashed_artifact(
-                paper,
-                entry,
-                "generation_source_path",
-                "generation_source_sha256",
-                "source",
-                errors,
-            )
-            _check_hashed_artifact(
-                paper,
-                entry,
-                "capture_source_path",
-                "capture_source_sha256",
-                "source",
-                errors,
-            )
-            _check_hashed_artifact(
-                paper,
-                entry,
-                "receipt_path",
-                "receipt_sha256",
-                "source",
-                errors,
-            )
+            _check_declared_hashes(paper, entry, label, errors)
     return manifest
+
+
+def _resolve_contained(base: Path, value: str) -> Path | None:
+    if (
+        Path(value).is_absolute()
+        or re.match(r"^[A-Za-z]:[\\/]", value)
+        or value.startswith("\\\\")
+        or ".." in re.split(r"[\\/]", value)
+    ):
+        return None
+    candidate = (base / value).resolve()
+    try:
+        candidate.relative_to(base.resolve())
+    except ValueError:
+        return None
+    return candidate
+
+
+def _check_declared_hashes(
+    paper: Path, entry: dict[str, Any], primary_label: str, errors: list[str]
+) -> None:
+    pairs = [("path", "sha256", primary_label)]
+    pairs.extend(
+        (key, f"{key[:-5]}_sha256", "source")
+        for key in entry
+        if key.endswith("_path")
+    )
+    for path_key, hash_key, label in dict.fromkeys(pairs):
+        _check_hashed_artifact(paper, entry, path_key, hash_key, label, errors)
 
 
 def _check_hashed_artifact(
@@ -216,13 +207,13 @@ def _check_hashed_artifact(
 ) -> None:
     source = entry.get(path_key)
     expected = entry.get(hash_key)
-    if source is None and expected is None:
-        return
     if not isinstance(source, str) or not isinstance(expected, str):
         errors.append(f"missing {label} hash")
         return
-    artifact = paper / source
-    if not artifact.is_file():
+    artifact = _resolve_contained(paper, source)
+    if artifact is None:
+        errors.append("unsafe manifest path")
+    elif not artifact.is_file():
         errors.append(f"missing {label} hash")
     elif _sha256(artifact) != expected:
         errors.append(f"{label} hash drift")
@@ -244,8 +235,8 @@ def _check_source_hashes(
         if not isinstance(relative, str) or not isinstance(expected, str):
             errors.append("invalid registry source")
             continue
-        candidate = root / relative
-        if not candidate.is_file() or _sha256(candidate) != expected:
+        candidate = _resolve_contained(root, relative)
+        if candidate is None or not candidate.is_file() or _sha256(candidate) != expected:
             errors.append(f"source hash drift: {source.get('source_id', 'unknown')}")
 
 
@@ -258,21 +249,125 @@ def _check_loop170_labels(tex_files: Iterable[Path], root: Path, errors: list[st
                 errors.append(f"unlabeled Loop170 values: {_relative(path, root)}")
 
 
-def _check_result_numbers(
-    paper: Path, registry: dict[str, Any], root: Path, errors: list[str]
-) -> None:
-    supported = _supported_numbers(registry)
-    files = [paper / "main.tex", *sorted((paper / "tables").glob("*.tex"))]
-    results = paper / "sections" / "06_results.tex"
-    if results.is_file():
-        files.append(results)
-    for path in files:
-        if not path.is_file():
+def _numbers_for_field(rows: object, field: str) -> set[float]:
+    values: set[float] = set()
+    if not isinstance(rows, list):
+        return values
+    for row in rows:
+        if not isinstance(row, dict):
             continue
-        for sentence in _sentences(_read(path, errors)):
-            if not _RESULT_TERMS.search(sentence):
+        value = row.get(field)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            values.add(float(value))
+        elif isinstance(value, list):
+            values.update(
+                float(item)
+                for item in value
+                if isinstance(item, (int, float)) and not isinstance(item, bool)
+            )
+    return values
+
+
+def _metric_fields(metric: str) -> tuple[str, ...]:
+    return {
+        "dice": ("robust_dice", "clean_dice", "robust_dice_delta", "robust_dice_ci95"),
+        "iou": ("robust_iou",),
+        "bf1": ("robust_bf1", "robust_bf1_delta", "robust_bf1_ci95"),
+        "precision": ("robust_precision",),
+        "recall": ("robust_recall",),
+        "hd95": (),
+        "assd": (),
+    }[metric]
+
+
+def _metric_name(clause: str, position: int) -> str | None:
+    aliases = (
+        ("bf1", r"boundary[- ]?f1|\bbf1\b"),
+        ("dice", r"(?:robust|clean)[- ]?dice|\bdice\b"),
+        ("iou", r"(?:robust[- ]?)?iou\b"),
+        ("precision", r"\bprecision\b"),
+        ("recall", r"\brecall\b"),
+        ("hd95", r"\bhd95\b"),
+        ("assd", r"\bassd\b"),
+    )
+    matches = [
+        (match.start(), name)
+        for name, pattern in aliases
+        for match in re.finditer(pattern, clause, re.IGNORECASE)
+    ]
+    before = [item for item in matches if item[0] <= position]
+    if before:
+        return max(before)[1]
+    return min(matches)[1] if matches else None
+
+
+def _metric_values(registry: dict[str, Any], metric: str | None) -> set[float]:
+    observations = registry.get("observations")
+    comparisons = registry.get("comparisons")
+    if metric is None:
+        fields = ("robust_dice_ci95", "robust_bf1_ci95")
+    else:
+        fields = _metric_fields(metric)
+    values: set[float] = set()
+    for field in fields:
+        values.update(_numbers_for_field(observations, field))
+    if metric == "dice":
+        for comparison in comparisons if isinstance(comparisons, list) else []:
+            if isinstance(comparison, dict) and comparison.get("metric") == "robust_dice":
+                for field in ("point_delta", "ci95"):
+                    value = comparison.get(field)
+                    if isinstance(value, (int, float)):
+                        values.add(float(value))
+                    elif isinstance(value, list):
+                        values.update(float(item) for item in value if isinstance(item, (int, float)))
+    if metric is not None and isinstance(observations, list):
+        base_field = _metric_fields(metric)[0] if _metric_fields(metric) else None
+        if base_field:
+            base_values = _numbers_for_field(observations, base_field)
+            values.update(abs(left - right) for left in base_values for right in base_values)
+    values.update(abs(value) for value in tuple(values))
+    return values
+
+
+def _protocol_values(
+    registry: dict[str, Any], clause: str, start: int, end: int
+) -> set[float]:
+    after = clause[end : end + 48].lower()
+    observations = registry.get("observations")
+    fields = []
+    if re.match(r"\s*(?:-| )\s*(?:paired\s+)?seeds?\b", after):
+        fields.append("seed_count")
+    if re.match(r"\s*(?:-| )\s*groups?\b", after):
+        fields.append("group_count")
+    if re.match(r"\s+(?:[a-z-]+\s+){0,3}resamples?\b", after):
+        fields.append("bootstrap_resamples")
+    if re.match(r"\s+(?:[a-z-]+\s+){0,2}corruptions?\b", after):
+        fields.append("corruption_count")
+    values: set[float] = set()
+    for field in fields:
+        values.update(_numbers_for_field(observations, field))
+    return values
+
+
+def _is_numeric_claim(path: Path, clause: str) -> bool:
+    if path.suffix != ".tex":
+        return False
+    if "tables" in {part.lower() for part in path.parts}:
+        return bool(_METRIC.search(clause) or _PROTOCOL.search(clause))
+    return bool(_METRIC.search(clause) and _RESULT_SIGNAL.search(clause))
+
+
+def _check_result_numbers(
+    tex_files: Iterable[Path], registry: dict[str, Any], root: Path, errors: list[str]
+) -> None:
+    for path in tex_files:
+        for clause in _clauses(_read(path, errors)):
+            if not _is_numeric_claim(path, clause):
                 continue
-            for match in _NUMBER.finditer(sentence):
+            for match in _NUMBER.finditer(clause):
+                protocol = _protocol_values(registry, clause, match.start(), match.end())
+                metric = _metric_values(registry, _metric_name(clause, match.start()))
+                supported = protocol or metric
                 if not _number_is_supported(match.group(), supported):
                     errors.append(
                         f"unsupported numeric result: {match.group()} in {_relative(path, root)}"
@@ -309,6 +404,36 @@ def _check_demo_receipts(
             errors.append("hidden no-GT metrics")
 
 
+def _normalized_tex_path(value: str, suffix: str) -> str:
+    path = Path(value.replace("\\", "/"))
+    return path.as_posix() if path.suffix else f"{path.as_posix()}{suffix}"
+
+
+def _check_manifest_references(
+    manifest: dict[str, Any], tex_files: Iterable[Path], errors: list[str]
+) -> None:
+    figures = manifest.get("figures", {})
+    tables = manifest.get("tables", {})
+    figure_paths = {
+        str(entry.get("path"))
+        for entry in figures.values()
+        if isinstance(entry, dict) and isinstance(entry.get("path"), str)
+    } if isinstance(figures, dict) else set()
+    table_paths = {
+        str(entry.get("path"))
+        for entry in tables.values()
+        if isinstance(entry, dict) and isinstance(entry.get("path"), str)
+    } if isinstance(tables, dict) else set()
+    for path in tex_files:
+        text = _read(path, errors)
+        for value in _INCLUDE_GRAPHICS.findall(text):
+            if _normalized_tex_path(value.strip(), ".pdf") not in figure_paths:
+                errors.append("unmapped figure input")
+        for value in _TABLE_INPUT.findall(text):
+            if _normalized_tex_path(value.strip(), ".tex") not in table_paths:
+                errors.append("unmapped table input")
+
+
 def audit_paper(paper: str | Path, registry: str | Path) -> AuditResult:
     """Audit paper inputs without emitting absolute filesystem paths."""
     paper_path = Path(paper).resolve()
@@ -340,10 +465,12 @@ def audit_paper(paper: str | Path, registry: str | Path) -> AuditResult:
     _check_citations(tex_files, bib_text, root, errors)
 
     if registry_payload is not None:
-        _check_manifest(paper_path, registry_payload, root, errors)
+        manifest = _check_manifest(paper_path, registry_payload, root, errors)
+        if manifest is not None:
+            _check_manifest_references(manifest, tex_files, errors)
         _check_source_hashes(registry_payload, root, errors)
         _check_loop170_labels(tex_files, root, errors)
-        _check_result_numbers(paper_path, registry_payload, root, errors)
+        _check_result_numbers(tex_files, registry_payload, root, errors)
         _check_demo_receipts(paper_path, registry_payload, errors)
         registry_sha256 = str(registry_payload.get("registry_sha256"))
     else:
