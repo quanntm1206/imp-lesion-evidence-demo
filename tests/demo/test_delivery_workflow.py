@@ -102,5 +102,6 @@ def test_runbook_and_readme_define_private_two_machine_handoff() -> None:
         "paper/clean_v3_loop206/**/*.py text eol=lf",
         "paper/clean_v3_loop206/**/*.json text eol=lf",
         "paper/clean_v3_loop206/**/*.tex text eol=lf",
+        "paper/clean_v3_loop206/figures/qualitative_demo_receipts.json text eol=crlf",
     ):
         assert pattern in attributes

@@ -4,3 +4,4 @@ paper/clean_v3_loop206/**/*.json text eol=lf
 paper/clean_v3_loop206/**/*.tex text eol=lf
 paper/clean_v3_loop206/**/*.bib text eol=lf
 paper/clean_v3_loop206/**/*.drawio text eol=lf
+paper/clean_v3_loop206/figures/qualitative_demo_receipts.json text eol=crlf
