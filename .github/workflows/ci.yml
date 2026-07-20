@@ -48,7 +48,8 @@ jobs:
           uv run --no-sync --python 3.12 python scripts/paper/audit_clean_v3_paper.py \
             --paper paper/clean_v3_loop206 \
             --registry demo/data/evidence_registry.json \
-            --receipt ci-receipts/paper-audit.json
+            --receipt ci-receipts/paper-audit.json \
+            --source-verification registry-only
 
       - name: Build paper when TeX is installed
         shell: bash

@@ -117,6 +117,6 @@ The evidence-bound paper and non-clinical demo use a private two-machine workflo
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1
 ```
 
-This rescue check is separate from the Linux training workflow. It creates `.venv-win`, runs CPU demo tests, rebuilds and audits the tracked paper evidence, then compiles the paper. Optional CUDA 13.0 environment verification uses `-Compute cu130`; model weights remain off GitHub.
+This rescue check is separate from the Linux training workflow. It creates `.venv-win`, runs portable CPU demo tests, rebuilds tracked paper evidence, records the registry-only audit scope, then compiles the paper. Optional CUDA 13.0 environment verification uses `-Compute cu130`; model weights remain off GitHub. Strict source-byte release audit remains a main-workstation gate.
 
 See [`docs/runbooks/two-machine-delivery.md`](docs/runbooks/two-machine-delivery.md) for machine roles, private branch policy, clean-clone handoff, CI receipts, and hash-verified artifact transfer.

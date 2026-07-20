@@ -69,8 +69,8 @@ try {
         }
     }
 
-    uv run --no-sync --python 3.12 python scripts/paper/audit_clean_v3_paper.py --paper $PaperDir --registry $Registry --receipt (Join-Path $ReceiptDir 'paper-audit.json')
-    Assert-LastExitCode 'paper evidence audit'
+    uv run --no-sync --python 3.12 python scripts/paper/audit_clean_v3_paper.py --paper $PaperDir --registry $Registry --receipt (Join-Path $ReceiptDir 'paper-audit.json') --source-verification registry-only
+    Assert-LastExitCode 'portable paper evidence audit'
 
     Push-Location $PaperDir
     try {

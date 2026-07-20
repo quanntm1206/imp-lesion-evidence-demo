@@ -33,6 +33,7 @@ def test_windows_bootstrap_preserves_cuda_overlay_and_runs_delivery_checks() -> 
     assert "--paper-dir $GeneratedPaperDir" in script
     assert "Get-FileHash" in script
     assert "audit_clean_v3_paper.py" in script
+    assert "--source-verification registry-only" in script
     assert "latexmk" in script
     assert "pdflatex" in script and "bibtex" in script
     assert "$PaperBuilt = $false" in script
@@ -60,6 +61,7 @@ def test_ci_is_cpu_only_reproducible_and_uploads_receipts() -> None:
     assert "--paper-dir ci-receipts/generated-paper" in commands
     assert "cmp" in commands
     assert "audit_clean_v3_paper.py" in commands
+    assert "--source-verification registry-only" in commands
     assert "latexmk" in commands
     assert "if latexmk -pdf" in commands
     assert "latexmk failed; trying pdflatex/bibtex fallback" in commands
@@ -88,6 +90,17 @@ def test_runbook_and_readme_define_private_two_machine_handoff() -> None:
         assert token in runbook
     assert "physical laptop" in runbook.lower()
     assert "unverified" in runbook.lower()
+    assert "portable verification" in runbook.lower()
+    assert "strict local release audit" in runbook.lower()
+    assert "source_verification=registry-only" in runbook
     assert "two-machine-delivery.md" in readme
     assert "bootstrap_windows.ps1" in readme
     assert "/paper/clean_v3_loop206/main.pdf" in _read(".gitignore")
+    attributes = _read(".gitattributes")
+    for pattern in (
+        "demo/data/evidence_registry.json text eol=lf",
+        "paper/clean_v3_loop206/**/*.py text eol=lf",
+        "paper/clean_v3_loop206/**/*.json text eol=lf",
+        "paper/clean_v3_loop206/**/*.tex text eol=lf",
+    ):
+        assert pattern in attributes

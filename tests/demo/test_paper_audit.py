@@ -54,6 +54,16 @@ def _copy_paper(tmp_path: Path) -> Path:
     return paper
 
 
+def _copy_portable_project(tmp_path: Path) -> tuple[Path, Path]:
+    root = tmp_path / "project"
+    paper = root / "paper/clean_v3_loop206"
+    registry = root / "demo/data/evidence_registry.json"
+    shutil.copytree(PAPER, paper)
+    registry.parent.mkdir(parents=True)
+    shutil.copy2(REGISTRY, registry)
+    return paper, registry
+
+
 @pytest.mark.parametrize(
     "forbidden",
     [
@@ -73,9 +83,36 @@ def test_audit_rejects_affirmative_forbidden_claims(
 
 
 def test_audit_allows_explicit_evidence_bounded_negation() -> None:
-    result = audit_paper(PAPER, REGISTRY)
+    result = audit_paper(PAPER, REGISTRY, source_verification="registry-only")
 
     assert result.passed, result.errors
+    assert result.source_verification == "registry-only"
+
+
+def test_registry_only_audit_reports_missing_sources_without_false_strict_claim(
+    tmp_path: Path,
+) -> None:
+    paper, registry = _copy_portable_project(tmp_path)
+
+    strict = audit_paper(paper, registry)
+    portable = audit_paper(paper, registry, source_verification="registry-only")
+    receipt = portable.receipt(paper)
+
+    assert not strict.passed
+    assert any("source hash drift" in error for error in strict.errors)
+    assert portable.passed, portable.errors
+    assert receipt["source_verification"] == "registry-only"
+    assert receipt["missing_source_ids"] == sorted(receipt["missing_source_ids"])
+    assert receipt["missing_source_ids"] == [
+        "loop170_bootstrap",
+        "loop170_locked_panel",
+        "loop191_report",
+        "loop192_report",
+        "loop206_report",
+    ]
+    assert receipt["warnings"] == [
+        "source bytes unavailable; strict local release audit required"
+    ]
 
 
 def test_audit_requires_registry_evidence_mapping(tmp_path: Path) -> None:

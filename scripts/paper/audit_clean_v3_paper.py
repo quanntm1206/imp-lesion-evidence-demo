@@ -57,6 +57,9 @@ _NEGATION = re.compile(
 class AuditResult:
     errors: tuple[str, ...]
     registry_sha256: str | None
+    source_verification: str = "strict"
+    missing_source_ids: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
 
     @property
     def passed(self) -> bool:
@@ -69,6 +72,9 @@ class AuditResult:
             "passed": self.passed,
             "registry_sha256": self.registry_sha256,
             "schema_version": "imp.paper_audit.v1",
+            "source_verification": self.source_verification,
+            "missing_source_ids": list(self.missing_source_ids),
+            "warnings": list(self.warnings),
         }
 
 
@@ -267,12 +273,16 @@ def _check_hashed_artifact(
 
 
 def _check_source_hashes(
-    registry: dict[str, Any], root: Path, errors: list[str]
-) -> None:
+    registry: dict[str, Any],
+    root: Path,
+    errors: list[str],
+    source_verification: str,
+) -> tuple[str, ...]:
     sources = registry.get("sources")
     if not isinstance(sources, list) or not sources:
         errors.append("missing evidence mapping")
-        return
+        return ()
+    missing_source_ids: list[str] = []
     for source in sources:
         if not isinstance(source, dict):
             errors.append("invalid registry source")
@@ -283,8 +293,16 @@ def _check_source_hashes(
             errors.append("invalid registry source")
             continue
         candidate = _resolve_contained(root, relative)
-        if candidate is None or not candidate.is_file() or _sha256(candidate) != expected:
-            errors.append(f"source hash drift: {source.get('source_id', 'unknown')}")
+        source_id = str(source.get("source_id", "unknown"))
+        if candidate is None:
+            errors.append(f"source hash drift: {source_id}")
+        elif not candidate.is_file():
+            missing_source_ids.append(source_id)
+            if source_verification == "strict":
+                errors.append(f"source hash drift: {source_id}")
+        elif _sha256(candidate) != expected:
+            errors.append(f"source hash drift: {source_id}")
+    return tuple(sorted(missing_source_ids))
 
 
 def _check_loop170_labels(tex_files: Iterable[Path], root: Path, errors: list[str]) -> None:
@@ -531,13 +549,21 @@ def _check_manifest_references(
                 errors.append("unmapped table input")
 
 
-def audit_paper(paper: str | Path, registry: str | Path) -> AuditResult:
+def audit_paper(
+    paper: str | Path,
+    registry: str | Path,
+    *,
+    source_verification: str = "strict",
+) -> AuditResult:
     """Audit paper inputs without emitting absolute filesystem paths."""
+    if source_verification not in {"strict", "registry-only"}:
+        raise ValueError("source_verification must be strict or registry-only")
     paper_path = Path(paper).resolve()
     registry_path = Path(registry).resolve()
     root = paper_path.parents[1] if len(paper_path.parents) > 1 else paper_path.parent
     errors: list[str] = []
     registry_payload: dict[str, Any] | None = None
+    missing_source_ids: tuple[str, ...] = ()
     try:
         loaded = json.loads(registry_path.read_text(encoding="ascii"))
         if not isinstance(loaded, dict):
@@ -565,14 +591,27 @@ def audit_paper(paper: str | Path, registry: str | Path) -> AuditResult:
         manifest = _check_manifest(paper_path, registry_payload, root, errors)
         if manifest is not None:
             _check_manifest_references(manifest, tex_files, errors)
-        _check_source_hashes(registry_payload, root, errors)
+        missing_source_ids = _check_source_hashes(
+            registry_payload, root, errors, source_verification
+        )
         _check_loop170_labels(tex_files, root, errors)
         _check_result_numbers(tex_files, registry_payload, root, errors)
         _check_demo_receipts(paper_path, registry_payload, errors)
         registry_sha256 = str(registry_payload.get("registry_sha256"))
     else:
         registry_sha256 = None
-    return AuditResult(tuple(dict.fromkeys(errors)), registry_sha256)
+    warnings = (
+        ("source bytes unavailable; strict local release audit required",)
+        if missing_source_ids and source_verification == "registry-only"
+        else ()
+    )
+    return AuditResult(
+        tuple(dict.fromkeys(errors)),
+        registry_sha256,
+        source_verification,
+        missing_source_ids,
+        warnings,
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -580,19 +619,32 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--paper", type=Path, required=True)
     parser.add_argument("--registry", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
+    parser.add_argument(
+        "--source-verification",
+        choices=("strict", "registry-only"),
+        default="strict",
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    result = audit_paper(args.paper, args.registry)
+    result = audit_paper(
+        args.paper,
+        args.registry,
+        source_verification=args.source_verification,
+    )
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
     args.receipt.write_text(
         json.dumps(result.receipt(args.paper), indent=2, sort_keys=True, ensure_ascii=True)
         + "\n",
         encoding="ascii",
     )
-    print(f"passed={str(result.passed).lower()} errors={len(result.errors)}")
+    print(
+        f"passed={str(result.passed).lower()} errors={len(result.errors)} "
+        f"source_verification={result.source_verification} "
+        f"missing_sources={len(result.missing_source_ids)}"
+    )
     return 0 if result.passed else 1
 
 

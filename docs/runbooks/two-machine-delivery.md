@@ -9,7 +9,7 @@
 
 ## Windows Bootstrap
 
-Prerequisites: Git, `uv`, Python install access through `uv`, and either `latexmk` or both `pdflatex` and `bibtex`. The script creates the configurable `.venv-win` environment with Python 3.12 and the `dev`, `analysis`, and `demo` extras, then runs CPU tests, deterministic table generation, the paper audit, and the paper build.
+Prerequisites: Git, `uv`, Python install access through `uv`, and either `latexmk` or both `pdflatex` and `bibtex`. The script creates the configurable `.venv-win` environment with Python 3.12 and the `dev`, `analysis`, and `demo` extras, then runs CPU tests, deterministic table generation, a portable paper audit, and the paper build.
 
 CPU bootstrap for a clean laptop clone:
 
@@ -32,6 +32,18 @@ powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1 -Compute 
 `-Compute cu130` first installs the `train` extra, then overlays the tested `torch==2.12.0+cu130` and `torchvision==0.27.0+cu130` wheels from the official CUDA 13.0 index. It fails unless both versions match and `torch.cuda.is_available()` is true. A normal `uv sync` resolves the Windows lock to CPU wheels and can replace this overlay. After the overlay, run GPU-related project commands with `.venv-win\Scripts\python.exe` directly or `uv run --no-sync`; do not run an ordinary `uv sync` in that environment.
 
 The smoke option verifies the environment only. Run a single model at a time. Keep weights outside GitHub.
+
+### Audit Levels
+
+Clean-clone bootstrap and CI are portable verification. They use `--source-verification registry-only`: registry semantic integrity, citations, claims, paper artifacts, manifest bindings, and every present source byte are validated. Compact source reports intentionally absent from Git are recorded as sorted `missing_source_ids` with the warning `source bytes unavailable; strict local release audit required`. This receipt is not full evidence reproduction.
+
+Before a local release, run the strict local release audit on the main workstation where all registry sources are present:
+
+```powershell
+.venv-win\Scripts\python.exe scripts/paper/audit_clean_v3_paper.py --paper paper/clean_v3_loop206 --registry demo/data/evidence_registry.json --receipt .artifacts/task12/paper-audit-strict.json
+```
+
+Strict is the audit CLI default. It fails on any missing or mismatched source byte. Do not relabel a `source_verification=registry-only` receipt as strict.
 
 ## Private GitHub Provisioning
 
@@ -68,7 +80,7 @@ Physical laptop execution remains unverified until the operator runs it. One-com
 $repo = gh repo view quanntm1206/imp-lesion-evidence-demo --json isPrivate,sshUrl | ConvertFrom-Json; if ($repo.isPrivate -ne $true) { throw 'Repository privacy is not verified' }; git clone --branch paper-review $repo.sshUrl E:\imp-lesion-evidence-demo; Set-Location E:\imp-lesion-evidence-demo; powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1; git status --short
 ```
 
-Expected operator receipt: bootstrap exits zero; demo tests pass; paper audit reports `passed=true errors=0`; the PDF builds; `git status --short` emits nothing. Record the command exit status and commit SHA. Do not report physical-laptop verification before that receipt exists.
+Expected operator receipt: bootstrap exits zero; portable demo tests pass with only named external-runtime integration skips; paper audit reports `passed=true errors=0 source_verification=registry-only` plus missing-source warnings; the PDF builds; `git status --short` emits nothing. Record the command exit status and commit SHA. Do not report physical-laptop verification before that receipt exists.
 
 ## Artifact Transfer
 
@@ -82,7 +94,7 @@ On the laptop, calculate SHA-256 again. Compare every filename and hash to the s
 
 ## CI Contract
 
-CI starts from GitHub's clean checkout on an Ubuntu CPU runner. It installs pinned `uv` and Python 3.12, syncs only `dev`, `analysis`, and `demo`, runs `tests/demo`, rebuilds tracked tables, rejects deterministic drift, audits the paper, compiles LaTeX when a runner is installed, and uploads test/paper receipts. It requires no model weights, private cache, dataset, CUDA, or GPU. GPU integration remains a local receipt.
+CI starts from GitHub's clean checkout on an Ubuntu CPU runner. It installs pinned `uv` and Python 3.12, syncs only `dev`, `analysis`, and `demo`, runs portable `tests/demo`, rebuilds tracked tables, rejects deterministic drift, performs the registry-only paper audit, compiles LaTeX when a runner is installed, and uploads test/paper receipts. It requires no model weights, private cache, dataset, CUDA, or GPU. Missing external-runtime integration assets produce only the explicit `external runtime assets; local release gate required` skips. GPU integration and the strict source-byte audit remain local receipts.
 
 ## Official Sources
 

@@ -20,6 +20,10 @@ PROVENANCE = (
     / ".artifacts/preprocessing_search/clean_v3_manifest/clean_v3_manifest.preview.csv"
 )
 SELECTED_IDS = {"ISIC_0000050", "ISIC_0012690", "ISIC_0016069"}
+requires_external_runtime_assets = pytest.mark.skipif(
+    not (DATASET_INDEX.is_file() and PROVENANCE.is_file()),
+    reason="external runtime assets; local release gate required",
+)
 
 
 def _load_module(name: str, path: Path):
@@ -127,6 +131,7 @@ def test_delta_extraction_rejects_registry_hash_mismatch(tmp_path: Path) -> None
         generator.load_loop206_delta_evidence(path)
 
 
+@requires_external_runtime_assets
 def test_provenance_authorizes_selected_identity_hash_license_and_gt() -> None:
     authorization = capture.load_display_authorization(
         PROVENANCE,
@@ -146,6 +151,7 @@ def test_provenance_authorizes_selected_identity_hash_license_and_gt() -> None:
     assert not any("path" in key for key in authorization)
 
 
+@requires_external_runtime_assets
 def test_provenance_rejects_missing_selected_sample(tmp_path: Path) -> None:
     rows = [row for row in _provenance_rows() if row["isic_image_id"] != "ISIC_0012690"]
     path = _write_csv(tmp_path, rows)
@@ -156,6 +162,7 @@ def test_provenance_rejects_missing_selected_sample(tmp_path: Path) -> None:
         )
 
 
+@requires_external_runtime_assets
 def test_provenance_rejects_unaccepted_image_license(tmp_path: Path) -> None:
     rows = _provenance_rows()
     row = next(value for value in rows if value["isic_image_id"] == "ISIC_0012690")
@@ -168,6 +175,7 @@ def test_provenance_rejects_unaccepted_image_license(tmp_path: Path) -> None:
         )
 
 
+@requires_external_runtime_assets
 def test_provenance_rejects_manifest_hash_mismatch() -> None:
     with pytest.raises(ValueError, match="manifest hash mismatch"):
         capture.load_display_authorization(
@@ -234,8 +242,19 @@ def test_manifest_binds_full_capture_render_chain_and_external_hashes() -> None:
     ):
         artifact = ROOT / "paper/clean_v3_loop206" / qualitative[path_key]
         assert hashlib.sha256(artifact.read_bytes()).hexdigest() == qualitative[hash_key]
+    assert len(qualitative["external_runtime_bundle_sha256"]) == 64
+    assert len(qualitative["provenance_manifest_sha256"]) == 64
+
+
+@requires_external_runtime_assets
+def test_external_provenance_manifest_matches_recorded_hash() -> None:
+    manifest = json.loads(
+        (ROOT / "paper/clean_v3_loop206/artifact_manifest.json").read_text(
+            encoding="ascii"
+        )
+    )
+    qualitative = manifest["figures"]["qualitative_demo"]
+
     assert qualitative["provenance_manifest_sha256"] == hashlib.sha256(
         PROVENANCE.read_bytes()
     ).hexdigest()
-    assert len(qualitative["external_runtime_bundle_sha256"]) == 64
-    assert len(qualitative["provenance_manifest_sha256"]) == 64
