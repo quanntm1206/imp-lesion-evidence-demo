@@ -1,0 +1,169 @@
+{
+  "panel_caption": "illustrative; not protected-test evidence",
+  "receipts": [
+    {
+      "cache_sha256": {
+        "candidate_data": "3f49e43524772b9eee17a146ff47cb15361cf78b2ce77f8c5b25c46b8f019ebb",
+        "candidate_manifest": "48e48290507eff6e4da8357e3310db9305a920f731c5b49890851d058d892255",
+        "zero_data": "c8f67865341c41e506c41f9ef3221861d2c4a12f771c7eee4159886fc718fa18",
+        "zero_manifest": "b92bd22e5425354b46bc019f3ab6d3daddc24568670717be2654c8938894c0da"
+      },
+      "device": "cuda",
+      "evidence_badge": [
+        "train_screen",
+        "exact_fixed_cache",
+        "historical_cache_provenance_drift"
+      ],
+      "evidence_registry_sha256": "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32",
+      "historical_cache_provenance_drift": true,
+      "latency_ms": {
+        "candidate": 15.538800002104836,
+        "control": 273.0484999992768,
+        "total": 288.68019999936223
+      },
+      "metrics": {
+        "candidate": {
+          "assd": 3.6402714591574026,
+          "boundary_f1": 0.4015458666634199,
+          "dice": 0.9624369587972215,
+          "hd95": 9.964300155639648,
+          "iou": 0.9275937177576522
+        },
+        "control": {
+          "assd": 4.557817935315585,
+          "boundary_f1": 0.34824415046298124,
+          "dice": 0.9547245006719496,
+          "hd95": 14.64799976348877,
+          "iou": 0.9133711651001951
+        }
+      },
+      "mode": "exact_fixed_cache",
+      "models": {
+        "candidate": {
+          "checkpoint_sha256": "afb86b2a5161189369dbc3c985e78f214c305470661048c6643726612f57638b",
+          "model_id": "L206-contour-channel-s206"
+        },
+        "control": {
+          "checkpoint_sha256": "be606b0a0940839b019ea60117dda4b27f9b8f04d54306b5b676f2c29516fcef",
+          "model_id": "L206-control-s206"
+        }
+      },
+      "sample": {
+        "corruption": "clean",
+        "group_key": "component:359df3ad7a38f96ab2127e2c90303fbe922d7c3a062eb5ff17cf4e9c5e895462",
+        "sample_id": "ISIC_0000050"
+      },
+      "schema_version": "loop206.demo.receipt.v1"
+    },
+    {
+      "cache_sha256": {
+        "candidate_data": "3f49e43524772b9eee17a146ff47cb15361cf78b2ce77f8c5b25c46b8f019ebb",
+        "candidate_manifest": "48e48290507eff6e4da8357e3310db9305a920f731c5b49890851d058d892255",
+        "zero_data": "c8f67865341c41e506c41f9ef3221861d2c4a12f771c7eee4159886fc718fa18",
+        "zero_manifest": "b92bd22e5425354b46bc019f3ab6d3daddc24568670717be2654c8938894c0da"
+      },
+      "device": "cuda",
+      "evidence_badge": [
+        "train_screen",
+        "exact_fixed_cache",
+        "historical_cache_provenance_drift"
+      ],
+      "evidence_registry_sha256": "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32",
+      "historical_cache_provenance_drift": true,
+      "latency_ms": {
+        "candidate": 17.230800000106683,
+        "control": 16.80299999861745,
+        "total": 34.173600000940496
+      },
+      "metrics": {
+        "candidate": {
+          "assd": 1.1594024037331403,
+          "boundary_f1": 0.9050493128392214,
+          "dice": 0.9705459770114943,
+          "hd95": 2.865000009536743,
+          "iou": 0.9427773900907188
+        },
+        "control": {
+          "assd": 0.973076696556256,
+          "boundary_f1": 0.9326070980849868,
+          "dice": 0.9749500537882281,
+          "hd95": 2.738600015640259,
+          "iou": 0.9511244377811094
+        }
+      },
+      "mode": "exact_fixed_cache",
+      "models": {
+        "candidate": {
+          "checkpoint_sha256": "afb86b2a5161189369dbc3c985e78f214c305470661048c6643726612f57638b",
+          "model_id": "L206-contour-channel-s206"
+        },
+        "control": {
+          "checkpoint_sha256": "be606b0a0940839b019ea60117dda4b27f9b8f04d54306b5b676f2c29516fcef",
+          "model_id": "L206-control-s206"
+        }
+      },
+      "sample": {
+        "corruption": "clean",
+        "group_key": "component:dee626c85dc2b7aeb500dfd33907a6197d7ec338dfc97641f871146d0e303bb1",
+        "sample_id": "ISIC_0012690"
+      },
+      "schema_version": "loop206.demo.receipt.v1"
+    },
+    {
+      "cache_sha256": {
+        "candidate_data": "3f49e43524772b9eee17a146ff47cb15361cf78b2ce77f8c5b25c46b8f019ebb",
+        "candidate_manifest": "48e48290507eff6e4da8357e3310db9305a920f731c5b49890851d058d892255",
+        "zero_data": "c8f67865341c41e506c41f9ef3221861d2c4a12f771c7eee4159886fc718fa18",
+        "zero_manifest": "b92bd22e5425354b46bc019f3ab6d3daddc24568670717be2654c8938894c0da"
+      },
+      "device": "cuda",
+      "evidence_badge": [
+        "train_screen",
+        "exact_fixed_cache",
+        "historical_cache_provenance_drift"
+      ],
+      "evidence_registry_sha256": "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32",
+      "historical_cache_provenance_drift": true,
+      "latency_ms": {
+        "candidate": 16.43770000009681,
+        "control": 25.586900002963375,
+        "total": 42.07749999841326
+      },
+      "metrics": {
+        "candidate": {
+          "assd": 1.2685411836672411,
+          "boundary_f1": 0.847366665216193,
+          "dice": 0.9466815215661308,
+          "hd95": 3.2792999744415283,
+          "iou": 0.8987609549712904
+        },
+        "control": {
+          "assd": 1.931975842898523,
+          "boundary_f1": 0.6721294392921762,
+          "dice": 0.921923390383048,
+          "hd95": 4.107900142669678,
+          "iou": 0.8551557302691261
+        }
+      },
+      "mode": "exact_fixed_cache",
+      "models": {
+        "candidate": {
+          "checkpoint_sha256": "afb86b2a5161189369dbc3c985e78f214c305470661048c6643726612f57638b",
+          "model_id": "L206-contour-channel-s206"
+        },
+        "control": {
+          "checkpoint_sha256": "be606b0a0940839b019ea60117dda4b27f9b8f04d54306b5b676f2c29516fcef",
+          "model_id": "L206-control-s206"
+        }
+      },
+      "sample": {
+        "corruption": "clean",
+        "group_key": "component:6564144ba6288d70fabb922a64e0fe0132c67658a9f1433fca5e8cd6b055d3f1",
+        "sample_id": "ISIC_0016069"
+      },
+      "schema_version": "loop206.demo.receipt.v1"
+    }
+  ],
+  "schema_version": "loop206.qualitative_receipts.v1",
+  "selection_rule": "first, middle, last after sorting all 76 train-screen rows by sample_id and group_key"
+}

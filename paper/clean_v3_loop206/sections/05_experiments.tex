@@ -1,5 +1,14 @@
 \section{Experimental Setup}
 
+Figure~\ref{fig:evidence-pipeline} maps each experimental and demonstration output to its evidence class before any claim is interpreted. Parallel model and ablation branches denote controlled alternatives rather than a sequential dependency. Protected-test access remains sealed throughout the pipeline.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/evidence_pipeline.pdf}
+\caption{Evidence-bound experimental and demonstration pipeline. The diagram separates \texttt{protected\_validation}, \texttt{train\_screen}, \texttt{legacy\_patient\_contaminated}, and sealed protected-test evidence, then applies claim gates. It supports protocol and claim-scope mapping only; it is not performance evidence.}
+\label{fig:evidence-pipeline}
+\end{figure*}
+
 \subsection{Architecture comparison}
 
 The primary validation table contains the Loop191 control and Loop192 nnU-Net v2. Both use the same \cleanv{} validation identities and the six-condition robustness panel. We report robust Dice, IoU, precision, recall, and boundary F1. Because each model has one recorded run and paired per-case evidence is not locally available in the rescue environment, no confidence interval or hypothesis test is attached to this table. Differences are descriptive point estimates.

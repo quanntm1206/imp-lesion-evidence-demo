@@ -12,9 +12,27 @@ The result also does not authorize test-v3 access under the historical combined 
 
 \input{tables/loop206_ablation}
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/loop206_delta.pdf}
+\caption{Loop206 candidate-minus-control deltas on the \texttt{train\_screen} protocol with 95\% paired cluster-bootstrap confidence intervals. The zero line marks no paired change. Loop191 and Loop192 point estimates are excluded because paired confidence intervals are unavailable for those runs.}
+\label{fig:loop206-delta}
+\end{figure}
+
 The contour channel reduces robust Dice by 0.0313. Its 95\% confidence interval, $[-0.0491,-0.0156]$, lies entirely below zero. On this three-seed, 76-group train-screen protocol, that result is sufficient to fail the preregistered primary gate; it does not establish a broader claim about contour methods. Boundary F1 changes by $-0.0147$; its interval $[-0.0308,0.0010]$ includes zero, providing no evidence of the intended boundary benefit. Precision and recall also decline in the recorded aggregate, while HD95 and ASSD increase. No arm produces an empty prediction.
 
 The candidate fails the primary-improvement, Dice non-inferiority, boundary non-inferiority, clean-Dice, precision, recall, distance, and per-corruption gates. Clean-v3 validation, test-v3, and PH2 remain sealed. The operational default and scientific reference are unchanged.
+
+\subsection{Fixed-cache qualitative demonstration}
+
+Figure~\ref{fig:qualitative-demo} shows three clean, non-protected examples selected without prediction or metric inspection: the first, middle, and last rows after sorting all 76 train-screen rows by sample identifier and group key. Each comparison was produced by the real GPU service and has a path-free receipt with the exact evidence class \texttt{train\_screen / exact\_fixed\_cache / historical\_cache\_provenance\_drift}. Ground truth appears only because these masks are provider-bound train-screen annotations. The panels illustrate mask geometry and disagreement; they do not estimate generalization or authorize arbitrary-upload candidate inference.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/qualitative_demo.pdf}
+\caption{Three deterministic, non-protected fixed-cache comparisons. Columns show the original image, control mask, candidate mask, disagreement overlay, and authorized train-screen ground truth. Rust marks control-only pixels and teal marks candidate-only pixels. Every row is \texttt{illustrative; not protected-test evidence}.}
+\label{fig:qualitative-demo}
+\end{figure*}
 
 \subsection{Legacy comparison}
 
