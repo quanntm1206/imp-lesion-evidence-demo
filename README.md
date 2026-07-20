@@ -22,10 +22,9 @@ MVP research scaffold for:
 
 ## Linux VM usage
 
-Run commands inside the Ubuntu WSL VM:
+From the repository root inside the Ubuntu WSL VM:
 
 ```bash
-cd "/mnt/e/0. IMP"
 bash scripts/setup_linux.sh
 bash scripts/run_tests.sh
 ```

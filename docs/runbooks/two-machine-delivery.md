@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1
 Different environment directory:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1 -Venv E:\venvs\imp-paper
+powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1 -Venv .venvs/imp-paper
 ```
 
 Optional RTX 4060 smoke environment:
@@ -77,17 +77,17 @@ git push origin rescue/paper-demo:demo-runtime
 Physical laptop execution remains unverified until the operator runs it. One-command CPU handoff from PowerShell:
 
 ```powershell
-$repo = gh repo view quanntm1206/imp-lesion-evidence-demo --json isPrivate,sshUrl | ConvertFrom-Json; if ($repo.isPrivate -ne $true) { throw 'Repository privacy is not verified' }; git clone --branch paper-review $repo.sshUrl E:\imp-lesion-evidence-demo; Set-Location E:\imp-lesion-evidence-demo; powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1; git status --short
+$repo = gh repo view quanntm1206/imp-lesion-evidence-demo --json isPrivate,sshUrl | ConvertFrom-Json; if ($repo.isPrivate -ne $true) { throw 'Repository privacy is not verified' }; $target = Join-Path (Get-Location) 'imp-lesion-evidence-demo'; git clone --branch paper-review $repo.sshUrl $target; Set-Location $target; powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1; git status --short
 ```
 
 Expected operator receipt: bootstrap exits zero; portable demo tests pass with only named external-runtime integration skips; paper audit reports `passed=true errors=0 source_verification=registry-only` plus missing-source warnings; the PDF builds; `git status --short` emits nothing. Record the command exit status and commit SHA. Do not report physical-laptop verification before that receipt exists.
 
 ## Artifact Transfer
 
-On the main workstation, write a hash manifest before LAN/USB transfer:
+On the main workstation, set `IMP_ARTIFACT_TRANSFER_ROOT` to the private transfer directory, then write a hash manifest before LAN/USB transfer:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 E:\private-artifacts\* | Format-Table Path,Hash -AutoSize
+Get-ChildItem -File $env:IMP_ARTIFACT_TRANSFER_ROOT | Get-FileHash -Algorithm SHA256 | Format-Table Path,Hash -AutoSize
 ```
 
 On the laptop, calculate SHA-256 again. Compare every filename and hash to the source manifest before use. Stop on a mismatch. Do not commit, upload, paste, or attach weights, priors, datasets, caches, environment values, tokens, or absolute private paths to GitHub issues or CI logs.

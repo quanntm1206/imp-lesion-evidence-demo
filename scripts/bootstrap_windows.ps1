@@ -38,7 +38,7 @@ try {
     $env:UV_PROJECT_ENVIRONMENT = $ProjectEnvironment
 
     if ($Compute -eq 'cu130') {
-        uv sync --python 3.12 --extra dev --extra analysis --extra demo --extra train
+        uv sync --locked --python 3.12 --extra dev --extra analysis --extra demo --extra train
         Assert-LastExitCode 'uv dependency sync'
 
         # uv.lock resolves Windows torch to CPU. Overlay only after the final sync.
@@ -48,7 +48,7 @@ try {
         & $Python -c "import torch, torchvision; assert torch.__version__ == '2.12.0+cu130', torch.__version__; assert torchvision.__version__ == '0.27.0+cu130', torchvision.__version__; assert torch.cuda.is_available(), 'CUDA is unavailable after the cu130 overlay'; print(f'torch={torch.__version__} torchvision={torchvision.__version__} cuda={torch.cuda.is_available()}')"
         Assert-LastExitCode 'CUDA overlay verification'
     } else {
-        uv sync --python 3.12 --extra dev --extra analysis --extra demo
+        uv sync --locked --python 3.12 --extra dev --extra analysis --extra demo
         Assert-LastExitCode 'uv dependency sync'
     }
 

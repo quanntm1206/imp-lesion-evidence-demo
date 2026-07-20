@@ -5,12 +5,15 @@
 /data/
 /demo_runtime/
 /logs/
+/weights/
 
 # Model and data formats
 *.pt
 *.pth
 *.ckpt
 *.onnx
+*.safetensors
+*.engine
 *.mmap
 *.npy
 *.npz
@@ -26,6 +29,7 @@ __pycache__/
 .ruff_cache/
 
 # Secrets and uploads
+/secrets/
 .env
 .env.*
 !.env.example

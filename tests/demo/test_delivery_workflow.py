@@ -39,6 +39,9 @@ def test_windows_bootstrap_preserves_cuda_overlay_and_runs_delivery_checks() -> 
     assert "$PaperBuilt = $false" in script
     assert "latexmk failed; trying pdflatex/bibtex fallback" in script
     assert "No TeX toolchain found" in script
+    sync_invocations = re.findall(r"^\s*uv sync\b.*$", script, flags=re.MULTILINE)
+    assert len(sync_invocations) == 2
+    assert all("--locked" in invocation for invocation in sync_invocations)
 
 
 def test_ci_is_cpu_only_reproducible_and_uploads_receipts() -> None:
@@ -105,3 +108,31 @@ def test_runbook_and_readme_define_private_two_machine_handoff() -> None:
         "paper/clean_v3_loop206/figures/qualitative_demo_receipts.json text eol=crlf",
     ):
         assert pattern in attributes
+
+
+def test_delivery_files_ignore_private_assets() -> None:
+    ignore = _read(".gitignore")
+    for pattern in (
+        "/weights/",
+        "/secrets/",
+        "*.safetensors",
+        "*.engine",
+        "*.pt",
+        "*.pth",
+        "*.ckpt",
+        "*.onnx",
+    ):
+        assert pattern in ignore
+    assert "*.bin" not in ignore
+
+
+def test_delivery_files_avoid_machine_local_paths() -> None:
+    for relative in (
+        "README.md",
+        "docs/runbooks/two-machine-delivery.md",
+        "scripts/bootstrap_windows.ps1",
+        ".github/workflows/ci.yml",
+    ):
+        text = _read(relative)
+        assert not re.search(r"(?<![A-Za-z])[A-Za-z]:[\\/]", text), relative
+        assert not re.search(r"/(?:mnt|home|Users)/", text), relative
