@@ -1,0 +1,79 @@
+# Loop206 Demo Operations
+
+## Scope Warning
+
+NON-CLINICAL RESEARCH DEMO. Segmentation output is not a diagnosis, clinical
+decision support, or medical-device output. Do not use it for patient care.
+
+## Required Environment Variables
+
+Set these names through the approved local secret manager or service wrapper.
+Do not put values in this runbook, source control, screenshots, receipts, or
+tunnel commands.
+
+- `IMP_LOOP206_CONTROL_CHECKPOINT`
+- `IMP_LOOP206_CANDIDATE_CHECKPOINT`
+- `IMP_LOOP206_PRIOR`
+- `IMP_LOOP206_PRIOR_RECEIPT`
+- `IMP_LOOP206_DATA_ROOT`
+
+## Preflight
+
+1. Verify the evidence registry semantic hash. Require it to match
+   `artifact_manifest.json`, fixed-cache receipts, and the paper-audit receipt.
+2. Verify control checkpoint, candidate checkpoint, prior, prior receipt,
+   candidate-cache manifest, and zero-cache manifest SHA-256 values against the
+   approved model registry and fixed-cache receipt.
+3. Start only when the candidate prior reproduces the 76 approved holdout
+   contours exactly. Otherwise keep arbitrary-upload candidate inference
+   disabled; do not substitute an approximate prior.
+4. Run the paper audit. It must report `passed=true errors=0` before release.
+
+## Local Start And Health
+
+1. Start `lesion-demo` on the loopback interface only.
+2. Open the local workbench. Confirm the degraded-runtime banner, evidence
+   registry hash, pinned model hashes, exact fixed-cache selector, and
+   non-clinical warning render.
+3. Run one allowlisted fixed-cache comparison without ground truth. Confirm no
+   Dice, IoU, boundary, HD95, or ASSD metrics are shown.
+4. Run the same approved sample with provider-bound ground truth. Confirm both
+   model hashes, the evidence badge, and a path-free JSON receipt.
+5. Verify queue concurrency remains `1`; do not add workers or a parallel
+   inference queue.
+
+## Upload Handling
+
+- Treat uploads as ephemeral control-only preview inputs.
+- Clear temporary uploads and generated receipt files after each session and
+  after every failed request.
+- Never retain raw uploads, masks, output arrays, or absolute filesystem paths
+  in logs, receipts, browser downloads, or tunnel diagnostics.
+- Candidate output for arbitrary uploads remains disabled unless exact prior
+  parity is re-established through the approved evidence workflow.
+
+## Tunnel Procedure
+
+1. Complete local health checks first.
+2. Start the approved tunnel service through its managed configuration; do not
+   place credentials, public addresses, or tokens in shell history or logs.
+3. Recheck the external surface: non-clinical warning, candidate lockout,
+   fixed-cache-only comparison, one-worker queue, and path-free receipts.
+4. Stop the tunnel immediately after review. Confirm no public listener remains
+   and delete transient tunnel logs containing request metadata.
+
+## Failure Recovery
+
+1. Stop the service and tunnel when a hash, prior parity, cache, registry, or
+   audit check fails.
+2. Preserve only the path-free failure receipt and command exit status.
+3. Restore the last approved immutable model, prior, cache, registry, and
+   manifest set. Re-run preflight and local health checks before restart.
+4. If candidate authorization fails, restart only in control-preview plus exact
+   fixed-cache mode. Do not bypass the lockout.
+
+## Local-Only Fallback
+
+Keep the service loopback-only when tunnel approval, health verification, or
+any evidence check is unavailable. Operators may review fixed-cache evidence
+locally; they must not expose an unverified service publicly.
