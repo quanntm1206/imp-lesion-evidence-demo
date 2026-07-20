@@ -1,0 +1,45 @@
+# Runtime and research evidence
+.artifacts/
+runs/
+checkpoints/
+data/
+demo_runtime/
+logs/
+
+# Model and data formats
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.mmap
+*.npy
+*.npz
+*.xlsx
+
+# Python
+.venv/
+.venv-win/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets and uploads
+.env
+.env.*
+!.env.example
+uploads/
+cloudflared*.log
+
+# LaTeX build products
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.run.xml
+*.synctex.gz

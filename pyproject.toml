@@ -1,0 +1,57 @@
+[project]
+name = "robust-skin-lesion-segmentation"
+version = "0.1.0"
+description = "Hybrid classical image processing and deep learning pipeline for robust skin lesion segmentation."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "numpy>=1.26",
+  "opencv-python-headless>=4.9",
+  "pillow>=10.0",
+  "pyyaml>=6.0",
+  "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+analysis = [
+  "matplotlib>=3.8",
+  "pandas>=2.2",
+  "scikit-image>=0.22",
+  "scikit-learn>=1.4",
+  "scipy>=1.11",
+]
+train = [
+  "torch>=2.2",
+  "torchvision>=0.17",
+  "segmentation-models-pytorch==0.5.0",
+]
+demo = [
+  "gradio>=5,<7",
+  "joblib>=1.3",
+]
+
+[project.scripts]
+lesion-classical = "lesion_robustness.classical_baseline:main"
+lesion-cache-dataset = "lesion_robustness.cache_dataset:main"
+lesion-evaluate = "lesion_robustness.evaluate:main"
+lesion-preprocess-search = "lesion_robustness.preprocessing_experiments:main"
+lesion-research-gap = "lesion_robustness.research_gap_analysis:main"
+lesion-train = "lesion_robustness.train:main"
+lesion-tune-threshold = "lesion_robustness.threshold_tuning:main"
+lesion-demo = "lesion_robustness.demo.app:main"
+lesion-build-evidence = "lesion_robustness.evidence_registry:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
