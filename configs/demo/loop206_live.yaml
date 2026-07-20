@@ -1,0 +1,38 @@
+schema_version: loop206.demo.live.v1
+image_size: [384, 384]
+model:
+  name: segformer_mit
+  in_channels: 3
+  input_channels: 4
+  encoder_in_channels: 3
+  out_channels: 1
+  base_channels: 32
+  smp_encoder: mit_b3
+  encoder_weights: null
+  edge_aux: false
+  input_adapter:
+    enabled: true
+    initialization: rgb_identity_extra_zero
+preprocessing:
+  contrast_stretch:
+    enabled: true
+    lower_percentile: 1.0
+    upper_percentile: 99.0
+  clahe:
+    enabled: true
+    color_space: lab
+    clip_limit: 2.0
+    tile_grid_size: [8, 8]
+  filter:
+    type: median
+    kernel_size: 3
+  color_constancy: {enabled: false}
+postprocessing:
+  threshold: 0.5
+  close_kernel: 5
+  fill_holes: true
+  min_area_ratio: 0.005
+  keep_largest: true
+metric:
+  boundary_tolerance: 2
+  empty_boundary_distance_policy: image_diagonal
