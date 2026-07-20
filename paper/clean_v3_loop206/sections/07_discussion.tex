@@ -1,0 +1,19 @@
+\section{Discussion}
+
+\subsection{What the architecture comparison supports}
+
+The observed nnU-Net advantage is consistent with the value of a self-configuring biomedical pipeline, but architecture is not the only changing variable. nnU-Net uses a different resolution, augmentation policy, loss, schedule, decoder, and postprocessing path. The comparison is consequently useful as a system-level baseline: it shows that the current IMP control does not dominate a strong biomedical reference on validation. It does not identify which nnU-Net component causes the difference.
+
+The precision direction is also important. A scalar gate that requires every metric to improve can hide a meaningful Pareto outcome, while a Dice-only ranking can hide boundary or false-positive costs. Future evaluation should report both a Dice-primary and a boundary-safe track rather than compressing all objectives into a single pass/fail label.
+
+\subsection{Why the contour channel may fail}
+
+The Loop206 result is more causally interpretable because the arms are matched except for the content of the fourth channel. Several mechanisms remain plausible.
+
+First, the binary contour discards uncertainty from the regional probability map. Errors in the saliency model become sharp, high-contrast input structures that may be easier for the network to overfit than to ignore. Second, active-contour evolution is optimized as a standalone mask refinement, whereas the student network already receives RGB gradients and may not benefit from a redundant hard prior. Third, the adapter begins by ignoring the extra channel but can learn seed-specific shortcuts during a small 308-group fit. Finally, improvements observed when refining an upstream probability map do not guarantee improvements when the refined mask is used as an input feature for another learned model. The latter is a form of intervention mismatch.
+
+The negative result does not imply that boundary information is unhelpful. It rejects a specific binary-channel mechanism. Softer uncertainty maps, auxiliary boundary supervision, native-resolution decoding, or loss-matched boundary heads remain separate hypotheses that require their own controlled experiments.
+
+\subsection{Value of evidence repair}
+
+The strongest contribution may be procedural. Before the audit, Loop170 appeared to provide a broad and persuasive model comparison. After patient-level review, the same table became legacy operational evidence. The scientific default consequently changed from a model number to a status: protected-test SOTA is not established. This is a healthier outcome than preserving a favorable but contaminated claim.

@@ -1,0 +1,23 @@
+\section{Results}
+
+\subsection{Clean-v3 validation comparison}
+
+\input{tables/clean_v3_validation}
+
+nnU-Net v2 has the higher recorded robust-Dice point estimate: 0.9019 versus 0.8959 for \impmodel{}, a difference of 0.0060. Its boundary F1 is also higher by 0.0224, and recall is higher by 0.0118. The IMP control has slightly higher precision, by 0.0032. These directions suggest an overlap--precision trade-off, but the lack of repeated seeds and paired confidence intervals prevents a statistical-superiority conclusion.
+
+The result also does not authorize test-v3 access under the historical combined gate. The correct statement is therefore narrow: nnU-Net has the stronger recorded \cleanv{} validation point estimate for robust Dice and boundary F1 under the old metric geometry.
+
+\subsection{Three-seed contour-channel ablation}
+
+\input{tables/loop206_ablation}
+
+The contour channel reduces robust Dice by 0.0313. Its 95\% confidence interval, $[-0.0491,-0.0156]$, lies entirely below zero. This is decisive evidence against the preregistered primary hypothesis on the train-screen protocol. Boundary F1 changes by $-0.0147$; its interval $[-0.0308,0.0010]$ includes zero, providing no evidence of the intended boundary benefit. Precision and recall also decline in the recorded aggregate, while HD95 and ASSD increase. No arm produces an empty prediction.
+
+The candidate fails the primary-improvement, Dice non-inferiority, boundary non-inferiority, clean-Dice, precision, recall, distance, and per-corruption gates. Clean-v3 validation, test-v3, and PH2 remain sealed. The operational default and scientific reference are unchanged.
+
+\subsection{Legacy comparison}
+
+\input{tables/legacy_loop170}
+
+The legacy table demonstrates why evidence labels matter. Its point estimates would otherwise invite a direct ranking, yet patient overlap violates the independence assumption required for such a claim. None of these values contributes to the main result.

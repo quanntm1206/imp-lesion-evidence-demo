@@ -1,0 +1,24 @@
+\section{Introduction}
+
+Automatic segmentation of pigmented skin lesions supports quantitative image analysis, follow-up, and computer-aided research. The task remains difficult because lesion borders can be faint, hairs and acquisition artifacts can occlude the target, and illumination, contrast, blur, noise, and compression vary across sources. Region-overlap metrics can also hide clinically visible boundary failures. A useful benchmark must therefore control data identity, preprocessing, model selection, metric geometry, and access to protected partitions rather than treating a single Dice value as sufficient evidence.
+
+This report was motivated by an audit of a long-running experimental repository. An earlier Clean-v2 benchmark contained three patient identifiers and 13 rows that crossed split boundaries. Those experiments included a broad panel---a preprocessing-aware MiT-B3 model, an architecture-matched vanilla model, EGE-UNet, and nnU-Net---and produced apparently competitive test values. Patient overlap, however, invalidates an independent patient-level generalization interpretation. Following the principle that leakage must be treated as a scientific design defect rather than a cosmetic limitation \citep{kapoor2023leakage}, the affected results are retained only as historical evidence.
+
+The repaired \cleanv{} protocol separates evidence into protected validation, train-screen, protected test, external audit, and contaminated legacy classes. This distinction changes the research question. Rather than asking whether one internal number is ``best,'' we ask:
+
+\begin{quote}
+Under a leakage-audited dermoscopic lesion segmentation workflow, how do a preprocessing-aware MiT-B3 U-Net pipeline and nnU-Net v2 trade region overlap against boundary quality, and does an explicit saliency-constrained contour channel improve a matched MiT-B3 control?
+\end{quote}
+
+Two hypotheses follow. First, the self-configuring nnU-Net pipeline should improve robust validation overlap and boundary quality relative to the current IMP control. Second, an explicit contour channel should improve boundary localization without materially reducing Dice. The available evidence is asymmetric: the architecture comparison consists of single-run validation point estimates under a known older geometry contract, whereas the contour-channel experiment is a paired, three-seed, train-screen ablation with cluster-bootstrap intervals. The claims are therefore separated rather than collapsed into one ranking.
+
+The contributions of this report are:
+
+\begin{enumerate}
+    \item an evidence hierarchy that prevents contaminated, train-screen, validation, and protected-test results from being ranked as if they were interchangeable;
+    \item a bounded \cleanv{} validation comparison between the IMP MiT-B3 U-Net control and nnU-Net v2 using overlap and boundary metrics;
+    \item a controlled negative ablation showing that the tested Loop206 contour channel materially reduces robust Dice across three paired seeds; and
+    \item a reproducibility and demonstration design in which paper tables and website labels are generated from the same hash-bound evidence registry.
+\end{enumerate}
+
+No contribution is presented as a protected-test result, a statistically significant architecture comparison, a clinical system, or a state-of-the-art claim.

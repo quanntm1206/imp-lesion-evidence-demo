@@ -1,0 +1,25 @@
+\section{Data and Evidence Protocol}
+
+\subsection{Clean-v3 manifest}
+
+The \cleanv{} manifest contains 2,869 dermoscopic image--mask pairs sourced from ISIC 2016, 2017, and 2018 challenge data \citep{isic2016challenge,isic2017challenge,isic2018challenge}. The split contains 2,008 training, 431 validation, and 430 sealed test rows. Each row records source dataset, original image ID, patient and lesion identifiers when available, exact raw and decoded-RGB hashes, perceptual hash, duplicate group, split group, and a transitive \cleanv{} component identifier.
+
+The integrity audit reported zero overlap across train, validation, and test partitions for patient, lesion, exact-duplicate, and split-group identities. Perceptual-hash review covered all flagged near-duplicate pairs. These checks reduce known identity leakage; they do not prove that no unrecorded biological relation exists between all images.
+
+\subsection{Repair of contaminated legacy evidence}
+
+Clean-v2 used the same nominal total of 2,869 rows but contained three patient identifiers and 13 rows crossing partitions. All Loop170 results tied to this split are classified as \texttt{legacy\_patient\_contaminated}. They remain useful for operational traceability and for illustrating how conclusions change after an audit, but they are excluded from \cleanv{} ranking and from the main conclusion.
+
+\input{tables/evidence_scope}
+
+\subsection{Partition access}
+
+Loop191 and Loop192 opened the \cleanv{} validation partition. Neither opened the 430-row test-v3 partition. Loop206 used only a train-derived pilot: 384 independent training groups were divided into 308 fit groups and 76 train-screen holdout groups. All protected \cleanv{} validation, test-v3, and PH2 paths remained sealed throughout Loop206.
+
+This report does not open a new protected partition. It uses existing aggregate validation reports, the final Loop206 closure report, and contaminated legacy tables. The evidence registry records the SHA-256 of each source and sets \texttt{scientific\_sota\_status=not\_established}.
+
+\subsection{Robustness conditions and metric geometry}
+
+The Loop191/192 validation protocol averages six conditions: clean, low brightness, low contrast, Gaussian noise, Gaussian blur, and JPEG compression. Loop206 uses the preregistered train-screen subset of clean, low contrast, and Gaussian noise. Robust means are arithmetic means across the conditions defined by each protocol; they are not compared across those two protocols.
+
+Dice, IoU, precision, and recall measure region agreement. Boundary F1 uses a two-pixel tolerance on the metric canvas. HD95 and ASSD measure symmetric boundary distances in canvas pixels. A later audit identified an important geometry limitation: Loop192 produced $256\times256$ predictions that were resized to a $384\times384$ metric canvas, while the control operated at $384\times384$. The recorded comparison therefore uses the historical \texttt{legacy\_nearest\_384\_t2} contract and is presented as provisional validation evidence. A future confirmatory comparison must reconstruct probabilities on original image geometry before thresholding.

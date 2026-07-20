@@ -1,0 +1,33 @@
+\section{Methods}
+
+\subsection{IMP--MiT-B3 U-Net control}
+
+The Loop191 control receives a dermoscopic RGB image resized to $384\times384$. Its deterministic inference preprocessing applies LAB-luminance CLAHE with clip limit 2.0 and an $8\times8$ tile grid, LAB-luminance percentile stretching at the first and 99th percentiles, and a $3\times3$ median filter. Color constancy, gamma correction, hair removal, sharpening, and extra input channels are disabled at inference.
+
+The network uses a MiT-B3 encoder initialized from ImageNet weights and the U-Net decoder implemented by \texttt{segmentation-models-pytorch}. The historical config name \texttt{segformer\_mit} refers to this encoder choice; it does not instantiate the original SegFormer MLP decoder. Training uses the project composite \texttt{bce\_focal\_tversky\_bdou} loss, batch size 32, learning rate $6\times10^{-5}$, and a 15-epoch Clean-v3 pilot. The selected checkpoint maximizes validation Dice.
+
+Inference converts probabilities to a mask at threshold 0.5, applies morphological closing with kernel size 5, fills holes, removes components smaller than 0.5\% of the canvas, and keeps the largest component. This postprocessing is frozen before evaluation.
+
+\subsection{Raw-RGB nnU-Net v2}
+
+Loop192 uses the nnU-Net v2 two-dimensional pipeline \citep{nnunet2021}. All 2,008 Clean-v3 training rows contribute to a final 100-epoch model. Images and targets are exported to a $256\times256$ nnU-Net dataset using raw RGB rather than the IMP contrast pipeline. Corruptions are created on the $384\times384$ validation input before downsampling. Predictions are returned to the historical $384\times384$ metric canvas. The architecture, optimizer, augmentation, and training schedule follow the generated nnU-Net plans recorded by the experiment artifact.
+
+This comparison intentionally evaluates complete systems. It cannot isolate whether a difference arises from the encoder, decoder, resolution, loss, augmentation, or self-configuration policy.
+
+\subsection{Loop205 regional saliency prior}
+
+Loop205 constructs a train-only regional saliency estimator. Each image is partitioned into multiscale SLIC regions. Image-only region features include RGB, LAB, and HSV means and standard deviations; grayscale and gradient statistics; area and centroid; border distance and boundary connectivity; regional LAB contrast; and pseudo-background similarity. Training masks supply soft lesion fractions for regions only in training folds.
+
+A deterministic random-forest regressor with 96 trees, maximum depth 12, minimum leaf size 3, feature fraction 0.75, and sample fraction 0.65 predicts region saliency. The two SLIC-scale predictions are averaged into a dense map. Five group-disjoint outer folds ensure that each train-screen case receives an out-of-fold prior. Support thresholds are selected from out-of-bag predictions inside the corresponding fit partition.
+
+\subsection{Loop206 saliency-constrained contour channel}
+
+The contour prior starts from the Loop205 probability map $p$. A LAB gradient magnitude $g$ is converted into an edge-stopping function and modulated by saliency:
+
+\begin{equation}
+E(x)=\frac{1}{\sqrt{1+\alpha g(x)^2}}\left[(1-w)+w\,B(p(x))\right],
+\end{equation}
+
+where $\alpha=12$, $w=0.35$, and $B$ linearly maps probabilities from 0.01 to 0.75 into $[0,1]$. The locked \texttt{neutral\_mid\_30\_s2} policy initializes at the train-selected support threshold plus 0.05, runs 30 morphological geodesic active-contour iterations, uses smoothing 2 and zero balloon force, fills holes, retains the component with greatest saliency mass, and falls back to the baseline support if the refined area violates preregistered bounds.
+
+Both Loop206 arms use the same four-to-three-channel $1\times1$ input adapter, MiT-B3 U-Net architecture, preprocessing, training budget, loss, and seeds 206, 1206, and 2206. The control's fourth channel is all zero. The candidate's fourth channel is the locked binary contour. The adapter is initialized to copy RGB and ignore the fourth channel, so any learned dependence on the contour must arise during matched training.
