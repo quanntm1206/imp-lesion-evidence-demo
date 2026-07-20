@@ -29,6 +29,8 @@ train = [
   "segmentation-models-pytorch==0.5.0",
 ]
 demo = [
+  "aiohttp>=3.10",
+  "fsspec>=2024.0",
   "gradio>=5,<7",
   "joblib>=1.3",
 ]
