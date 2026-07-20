@@ -123,13 +123,13 @@ def _holdout_row() -> dict[str, object]:
 def test_fixed_lookup_uses_group_and_corruption_not_historical_path(tmp_path: Path) -> None:
     pair, image = _pair(tmp_path)
 
-    record = pair.lookup(_holdout_row(), corruption="clean", input_rgb=image)
+    record = pair.lookup_fixture(_holdout_row(), corruption="clean", input_rgb=image)
 
     np.testing.assert_array_equal(record.control_channel, 0)
     np.testing.assert_array_equal(record.candidate_channel, 255)
     assert record.group_key == "group-fixed"
     assert record.corruption == "clean"
-    assert record.metadata["historical_cache_provenance_drift"] is None
+    assert not hasattr(record, "metadata")
 
 
 def test_fixed_cache_rejects_declared_hash_mismatch(tmp_path: Path) -> None:
@@ -163,9 +163,41 @@ def test_fixed_lookup_rejects_wrong_binding(
         image[0, 0, 0] ^= 1
 
     with pytest.raises((KeyError, ValueError), match=message):
-        pair.lookup(row, corruption=corruption, input_rgb=image)
+        pair.lookup_fixture(row, corruption=corruption, input_rgb=image)
 
 
 def test_fixed_cache_rejects_nonzero_control_channel(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="all-zero"):
         _pair(tmp_path, zero_value=1)
+
+
+def test_fixture_cache_cannot_accept_caller_asserted_runtime_provenance(
+    tmp_path: Path,
+) -> None:
+    pair, _ = _pair(tmp_path)
+
+    with pytest.raises(TypeError):
+        FixedCachePair(
+            pair.candidate.manifest_path,
+            pair.zero.manifest_path,
+            expectations=pair.expectations,
+            runtime_config_sha256="a" * 64,
+        )
+
+
+def test_fixture_cache_exposes_no_free_form_production_lookup(tmp_path: Path) -> None:
+    pair, _ = _pair(tmp_path)
+
+    assert not hasattr(pair, "lookup")
+
+
+def test_fixed_presentation_is_the_internal_runtime_image_not_source_geometry() -> None:
+    import lesion_robustness.demo.fixed_cache as module
+
+    decoded_source = np.full((96, 128, 3), 12, dtype=np.uint8)
+    runtime = np.full((4, 4, 3), 34, dtype=np.uint8)
+
+    presentation = module._fixed_presentation_rgb(decoded_source, runtime)
+
+    np.testing.assert_array_equal(presentation, runtime)
+    assert not np.shares_memory(presentation, runtime)

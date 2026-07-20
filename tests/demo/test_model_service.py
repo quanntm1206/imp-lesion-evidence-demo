@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from dataclasses import fields
 import hashlib
+import inspect
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from lesion_robustness.demo.fixed_cache import FixedCacheRecord, sha256_rgb_array
 from lesion_robustness.demo.model_service import (
     CandidateUnavailableError,
     ControlOnlyResult,
@@ -71,6 +72,19 @@ def test_arbitrary_comparison_fails_closed_before_inference_without_receipt(
     assert candidate.call_count == 0
 
 
+def test_constructor_rejects_duck_typed_prior(
+    endpoints: tuple[FakeModel, FakeModel],
+) -> None:
+    control, candidate = endpoints
+    forged = SimpleNamespace(prior=FakePrior(), receipt_sha256="a" * 64)
+
+    with pytest.raises(TypeError, match="ReceiptAuthorizedPrior"):
+        Loop206ComparisonService(control, candidate, forged)
+
+    assert control.call_count == 0
+    assert candidate.call_count == 0
+
+
 def test_service_builds_zero_and_receipt_authorized_candidate_channels(
     endpoints: tuple[FakeModel, FakeModel],
     tmp_path: Path,
@@ -93,32 +107,67 @@ def test_service_builds_zero_and_receipt_authorized_candidate_channels(
     ).hexdigest()
 
 
-def test_fixed_comparison_returns_both_arms_at_original_geometry(
+def test_public_fixed_comparison_accepts_only_allowlisted_identifier_and_corruption(
     endpoints: tuple[FakeModel, FakeModel],
 ) -> None:
     control, candidate = endpoints
     service = Loop206ComparisonService(control, candidate)
-    original = np.full((240, 320, 3), 90, dtype=np.uint8)
-    preprocessed = np.full((384, 384, 3), 100, dtype=np.uint8)
-    fixed = FixedCacheRecord(
-        group_key="fixed-group",
+    parameters = inspect.signature(service.compare_fixed).parameters
+
+    assert list(parameters) == ["identifier", "corruption"]
+    with pytest.raises(CandidateUnavailableError, match="production fixed provider"):
+        service.compare_fixed("allowlisted-sample", corruption="clean")
+    with pytest.raises(TypeError):
+        service.compare_fixed(
+            np.full((240, 320, 3), 90, dtype=np.uint8),
+            preprocessed_rgb=np.full((384, 384, 3), 100, dtype=np.uint8),
+            fixed=object(),
+        )
+    assert control.call_count == 0
+    assert candidate.call_count == 0
+
+
+def test_constructor_rejects_fixture_fixed_provider(
+    endpoints: tuple[FakeModel, FakeModel],
+) -> None:
+    control, candidate = endpoints
+
+    with pytest.raises(TypeError, match="production-authorized fixed provider"):
+        Loop206ComparisonService(
+            control,
+            candidate,
+            fixed_provider=SimpleNamespace(authorize=lambda *_args: object()),
+        )
+
+
+def test_fixed_result_metadata_uses_an_explicit_allowlist() -> None:
+    import lesion_robustness.demo.model_service as module
+
+    authorized = SimpleNamespace(
+        group_key="group-fixed",
+        sample_id="sample-fixed",
         corruption="clean",
-        input_rgb_sha256=sha256_rgb_array(preprocessed),
-        control_channel=np.zeros((384, 384), dtype=np.uint8),
-        candidate_channel=np.full((384, 384), 255, dtype=np.uint8),
-        metadata={"historical_cache_provenance_drift": True},
+        candidate_manifest_sha256="1" * 64,
+        candidate_data_sha256="2" * 64,
+        zero_manifest_sha256="3" * 64,
+        zero_data_sha256="4" * 64,
+        historical_cache_provenance_drift=True,
+        metadata={"local_path": "C:/private", "comparison_source": "forged"},
     )
 
-    result = service.compare_fixed(original, preprocessed_rgb=preprocessed, fixed=fixed)
+    metadata = module._fixed_public_metadata(authorized)
 
-    assert control.call_count == 1
-    assert candidate.call_count == 1
-    assert result.control_probability.shape == (240, 320)
-    assert result.candidate_probability.shape == (240, 320)
-    assert result.control_mask.shape == (240, 320)
-    assert result.candidate_mask.shape == (240, 320)
-    assert result.prior_receipt_sha256 is None
-    assert result.metadata["comparison_source"] == "exact_fixed_cache"
+    assert metadata == {
+        "comparison_source": "exact_fixed_cache",
+        "group_key": "group-fixed",
+        "sample_id": "sample-fixed",
+        "corruption": "clean",
+        "candidate_manifest_sha256": "1" * 64,
+        "candidate_data_sha256": "2" * 64,
+        "zero_manifest_sha256": "3" * 64,
+        "zero_data_sha256": "4" * 64,
+        "historical_cache_provenance_drift": True,
+    }
 
 
 def test_control_only_result_cannot_be_mistaken_for_comparison(
@@ -142,32 +191,47 @@ def test_service_rejects_checkpoint_hash_mismatch(tmp_path: Path) -> None:
     control.write_bytes(b"control")
     candidate.write_bytes(b"candidate")
     registry = tmp_path / "registry.json"
-    registry.write_text(
-        json.dumps(
-            {
-                "schema_version": "loop206.demo.models.v1",
-                "control": {
-                    "model_id": "L206-control-s206",
-                    "checkpoint_env": "CONTROL_PT",
-                    "checkpoint_sha256": "0" * 64,
-                },
-                "candidate": {
-                    "model_id": "L206-contour-channel-s206",
-                    "checkpoint_env": "CANDIDATE_PT",
-                    "checkpoint_sha256": hashlib.sha256(b"candidate").hexdigest(),
-                },
-                "prior_env": "PRIOR",
-                "prior_receipt_env": "PRIOR_RECEIPT",
-            }
-        ),
-        encoding="ascii",
+    payload = json.loads(
+        (Path(__file__).resolve().parents[2] / "demo/model_registry.example.json").read_text(
+            encoding="ascii"
+        )
     )
+    registry.write_text(json.dumps(payload), encoding="ascii")
 
     with pytest.raises(ValueError, match="control checkpoint hash"):
         load_model_registry(
             registry,
-            environ={"CONTROL_PT": str(control), "CANDIDATE_PT": str(candidate)},
+            environ={
+                "IMP_LOOP206_CONTROL_CHECKPOINT": str(control),
+                "IMP_LOOP206_CANDIDATE_CHECKPOINT": str(candidate),
+            },
         )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda value: value.update(schema_version="loop206.demo.models.v2"),
+        lambda value: value["control"].update(model_id="forged-control"),
+        lambda value: value["candidate"].update(checkpoint_sha256="0" * 64),
+        lambda value: value["control"].update(checkpoint_env="FORGED_CONTROL"),
+        lambda value: value.update(prior_env="FORGED_PRIOR"),
+    ],
+)
+def test_registry_rejects_mutable_authority_before_environment_resolution(
+    tmp_path: Path, mutation
+) -> None:
+    payload = json.loads(
+        (Path(__file__).resolve().parents[2] / "demo/model_registry.example.json").read_text(
+            encoding="ascii"
+        )
+    )
+    mutation(payload)
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps(payload), encoding="ascii")
+
+    with pytest.raises(ValueError, match="pinned model registry"):
+        load_model_registry(registry, environ={})
 
 
 def test_model_endpoint_contract_is_runtime_checkable(endpoints: tuple[FakeModel, FakeModel]) -> None:
