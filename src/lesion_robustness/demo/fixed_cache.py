@@ -142,9 +142,14 @@ class _ValidatedCache:
         except ValueError as exc:
             raise ValueError(f"Loop206 {role} cache data path escape") from exc
         expected_size = int(expected_count) * int(expected_shape[0]) * int(expected_shape[1])
-        if not data_path.is_file() or data_path.stat().st_size != expected_size:
+        try:
+            with data_path.open("rb") as handle:
+                data_bytes = handle.read()
+        except FileNotFoundError as exc:
+            raise ValueError(f"Loop206 {role} cache data is missing") from exc
+        if len(data_bytes) != expected_size:
             raise ValueError(f"Loop206 {role} cache data size mismatch")
-        actual_data_hash = _sha256_file(data_path)
+        actual_data_hash = hashlib.sha256(data_bytes).hexdigest()
         if data.get("sha256") != expected_data_sha256 or actual_data_hash != expected_data_sha256:
             raise ValueError(f"Loop206 {role} cache data hash mismatch")
 
@@ -182,11 +187,9 @@ class _ValidatedCache:
         self.data_path = data_path
         self.data_sha256 = actual_data_hash
         self.manifest_sha256 = actual_manifest_hash
-        self.data = np.memmap(
-            data_path,
-            mode="r",
-            dtype=np.uint8,
-            shape=(int(expected_count), int(expected_shape[0]), int(expected_shape[1])),
+        self._data_bytes = data_bytes
+        self.data = np.frombuffer(self._data_bytes, dtype=np.uint8).reshape(
+            int(expected_count), int(expected_shape[0]), int(expected_shape[1])
         )
 
 

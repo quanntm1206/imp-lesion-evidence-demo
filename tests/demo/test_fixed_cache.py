@@ -201,3 +201,26 @@ def test_fixed_presentation_is_the_internal_runtime_image_not_source_geometry() 
 
     np.testing.assert_array_equal(presentation, runtime)
     assert not np.shares_memory(presentation, runtime)
+
+
+@pytest.mark.parametrize("arm", ["candidate", "zero"])
+def test_validated_cache_does_not_observe_post_construction_file_mutation(
+    tmp_path: Path, arm: str
+) -> None:
+    pair, image = _pair(tmp_path)
+    cache = pair.candidate if arm == "candidate" else pair.zero
+    replacement = 0 if arm == "candidate" else 255
+    with cache.data_path.open("r+b") as handle:
+        handle.write(bytes([replacement]) * (4 * 4))
+        handle.flush()
+
+    record = pair.lookup_fixture(_holdout_row(), corruption="clean", input_rgb=image)
+
+    assert not cache.data.flags.writeable
+    np.testing.assert_array_equal(record.candidate_channel, 255)
+    np.testing.assert_array_equal(record.control_channel, 0)
+    assert cache.data_sha256 == (
+        pair.expectations.candidate_data_sha256
+        if arm == "candidate"
+        else pair.expectations.zero_data_sha256
+    )
