@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
@@ -7,7 +8,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
+import tempfile
 from typing import Any, Mapping, Sequence
+import uuid
 
 import numpy as np
 
@@ -29,6 +33,15 @@ PROJECT_SEED = 206
 EXPECTED_FIT_ROWS = 308
 EXPECTED_HOLDOUT_ROWS = 76
 EXPECTED_DATASET_ROWS = 384
+EXPECTED_CACHE_ROWS = 536
+EXPECTED_FOLD_COUNTS = {0: 77, 1: 77, 2: 77, 3: 77, 4: 76}
+EXPECTED_BASE_THRESHOLD = 0.07500000000000001
+EXPECTED_FIT_FOLD_THRESHOLDS = {
+    0: 0.07500000000000001,
+    1: 0.07500000000000001,
+    2: 0.05,
+    3: 0.07500000000000001,
+}
 LOCKED_CONFIG_NAME = "neutral_mid_30_s2"
 DEFAULT_FROZEN_CONFIG = Path("configs/loop206/l206_control_train_screen_pilot20.yaml")
 
@@ -344,6 +357,108 @@ def load_prior(path: str | Path, *, expected_sha256: str) -> Loop206Prior:
     return loaded
 
 
+def _receipt_hash(payload: Mapping[str, Any]) -> str:
+    return _canonical_hash(
+        {key: value for key, value in payload.items() if key != "content_sha256"}
+    )
+
+
+def _load_passed_receipt(path: str | Path) -> dict[str, Any]:
+    import sklearn
+
+    receipt_path = Path(path)
+    payload = json.loads(receipt_path.read_text(encoding="ascii"))
+    if not isinstance(payload, dict) or payload.get("schema_version") != RECEIPT_SCHEMA:
+        raise ValueError("Loop206 deployment receipt schema mismatch")
+    if payload.get("status") != "passed":
+        raise ValueError("Loop206 deployment receipt status is not passed")
+    if payload.get("content_sha256") != _receipt_hash(payload):
+        raise ValueError("Loop206 deployment receipt content hash mismatch")
+    for field in (
+        "dataset_index_sha256",
+        "candidate_manifest_sha256",
+        "fit_group_sha256",
+        "artifact_sha256",
+    ):
+        if not _is_sha256(payload.get(field)):
+            raise ValueError(f"Loop206 deployment receipt {field} mismatch")
+    parity = payload.get("parity")
+    if not isinstance(parity, dict):
+        raise ValueError("Loop206 deployment receipt parity is missing")
+    if (
+        parity.get("parity_passed") is not True
+        or int(parity.get("expected", -1)) != EXPECTED_HOLDOUT_ROWS
+        or int(parity.get("input_rgb_hash_matches", -1)) != EXPECTED_HOLDOUT_ROWS
+        or int(parity.get("contour_byte_matches", -1)) != EXPECTED_HOLDOUT_ROWS
+        or parity.get("mismatch_groups", []) != []
+        or not _is_sha256(parity.get("candidate_data_sha256"))
+    ):
+        raise ValueError("Loop206 deployment receipt parity mismatch")
+    if parity.get("candidate_manifest_sha256") != payload["candidate_manifest_sha256"]:
+        raise ValueError("Loop206 deployment receipt candidate manifest binding mismatch")
+    if int(payload.get("fit_groups", -1)) != EXPECTED_FIT_ROWS:
+        raise ValueError("Loop206 deployment receipt fit group count mismatch")
+    if payload.get("artifact_schema") != ARTIFACT_SCHEMA:
+        raise ValueError("Loop206 deployment receipt artifact schema mismatch")
+    if payload.get("feature_names") != list(loop205_protocol.FEATURE_NAMES):
+        raise ValueError("Loop206 deployment receipt feature names mismatch")
+    if _canonical_hash(payload.get("loop205_config")) != _canonical_hash(
+        asdict(loop205_protocol.Loop205Config())
+    ):
+        raise ValueError("Loop206 deployment receipt Loop205 config mismatch")
+    runtime = payload.get("loop206_config")
+    if not isinstance(runtime, dict):
+        raise ValueError("Loop206 deployment receipt Loop206 config mismatch")
+    image_size = tuple(int(value) for value in runtime.get("image_size", ()))
+    if _canonical_hash(runtime) != _canonical_hash(_runtime_payload(image_size=image_size)):
+        raise ValueError("Loop206 deployment receipt Loop206 config mismatch")
+    if payload.get("sklearn_version") != str(sklearn.__version__):
+        raise ValueError("Loop206 deployment receipt sklearn version mismatch")
+    if payload.get("code_hashes") != _current_code_hashes():
+        raise ValueError("Loop206 deployment receipt code hashes mismatch")
+    try:
+        threshold = float(payload.get("selected_threshold"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Loop206 deployment receipt threshold mismatch") from exc
+    if not 0.0 < threshold < 1.0:
+        raise ValueError("Loop206 deployment receipt threshold mismatch")
+    return payload
+
+
+def load_deployment_prior(
+    artifact_path: str | Path, receipt_path: str | Path
+) -> Loop206Prior:
+    """Load the Task5 prior only after validating its immutable parity receipt."""
+
+    receipt = _load_passed_receipt(receipt_path)
+    artifact = Path(artifact_path)
+    actual_artifact_sha256 = sha256_file(artifact)
+    if actual_artifact_sha256 != receipt["artifact_sha256"]:
+        raise ValueError("Loop206 deployment artifact hash mismatch")
+    prior = load_prior(artifact, expected_sha256=receipt["artifact_sha256"])
+    if prior.parity_passed is not True:
+        raise ValueError("Loop206 deployment artifact parity flag mismatch")
+    bindings = (
+        (prior.schema_version, receipt.get("artifact_schema"), "artifact schema"),
+        (prior.manifest_sha256, receipt.get("dataset_index_sha256"), "manifest hash"),
+        (prior.fit_group_sha256, receipt.get("fit_group_sha256"), "group hash"),
+        (prior.selected_threshold, receipt.get("selected_threshold"), "threshold"),
+        (list(prior.feature_names), receipt.get("feature_names"), "feature names"),
+        (prior.sklearn_version, receipt.get("sklearn_version"), "sklearn version"),
+        (prior.code_hashes, receipt.get("code_hashes"), "code hashes"),
+    )
+    for actual, expected, label in bindings:
+        if actual != expected:
+            raise ValueError(f"Loop206 deployment receipt {label} mismatch")
+    for actual, expected, label in (
+        (prior.loop205_config, receipt.get("loop205_config"), "Loop205 config"),
+        (prior.loop206_config, receipt.get("loop206_config"), "Loop206 config"),
+    ):
+        if _canonical_hash(actual) != _canonical_hash(expected):
+            raise ValueError(f"Loop206 deployment receipt {label} mismatch")
+    return prior
+
+
 def _safe_index_path(root: Path, relative: object) -> Path:
     text = str(relative)
     candidate = (root / Path(text)).resolve()
@@ -378,17 +493,48 @@ def load_dataset_index(
     if payload.get("schema_version") != DATASET_INDEX_SCHEMA:
         raise ValueError("Loop206 dataset index schema mismatch")
     rows = list(payload.get("rows", []))
+    try:
+        declared_rows = int(payload.get("row_count", -1))
+        declared_roots = int(payload.get("root_count", -1))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Loop206 dataset row count/root count mismatch") from exc
     if (
         len(rows) != EXPECTED_DATASET_ROWS
+        or declared_rows != len(rows)
         or int(payload.get("fit_count", -1)) != EXPECTED_FIT_ROWS
         or int(payload.get("holdout_count", -1)) != EXPECTED_HOLDOUT_ROWS
     ):
-        raise ValueError("Loop206 dataset index counts mismatch")
+        raise ValueError("Loop206 dataset row count mismatch")
+    if declared_roots < 1:
+        raise ValueError("Loop206 dataset root count mismatch")
+    role_counts = Counter(str(row.get("role", "")).strip().lower() for row in rows)
+    if role_counts != Counter({"fit": EXPECTED_FIT_ROWS, "holdout": EXPECTED_HOLDOUT_ROWS}):
+        raise ValueError("Loop206 dataset role count mismatch")
+    fold_counts = Counter(int(row.get("fold", -1)) for row in rows)
+    if fold_counts != Counter(EXPECTED_FOLD_COUNTS):
+        raise ValueError("Loop206 dataset fold count mismatch")
+    for row in rows:
+        role = str(row.get("role", "")).strip().lower()
+        fold = int(row.get("fold", -1))
+        split = str(row.get("split", "")).strip().lower()
+        if role == "fit" and (fold not in range(4) or split != "train"):
+            raise ValueError("Loop206 dataset fold/role policy mismatch")
+        if role == "holdout" and (fold != 4 or split != "train_screen_holdout"):
+            raise ValueError("Loop206 dataset fold/role policy mismatch")
+        if str(row.get("source_split", "")).strip().lower() != "train":
+            raise ValueError("Loop206 dataset source split policy mismatch")
+        try:
+            references = (int(row["image_root"]), int(row["mask_root"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Loop206 dataset root reference mismatch") from exc
+        if any(reference not in range(declared_roots) for reference in references):
+            raise ValueError("Loop206 dataset root reference mismatch")
     roots = [Path(root).expanduser().resolve() for root in dataset_roots]
     if not roots:
         roots = _default_dataset_roots(index_path)
-    if len(roots) < int(payload.get("root_count", -1)):
+    if len(roots) < declared_roots:
         raise ValueError("Loop206 dataset roots are missing; set IMP_LOOP206_DATA_ROOT")
+    roots = roots[:declared_roots]
     fit_rows: list[PriorFitRow] = []
     holdout_rows: list[PriorHoldoutRow] = []
     fit_index = 0
@@ -441,27 +587,194 @@ def load_dataset_index(
     return fit_rows, holdout_rows, payload
 
 
+def validate_candidate_manifest(
+    candidate_manifest: str | Path,
+    *,
+    expected_base_threshold: float = EXPECTED_BASE_THRESHOLD,
+    frozen_config: str | Path = DEFAULT_FROZEN_CONFIG,
+) -> tuple[dict[str, Any], Path]:
+    manifest_path = Path(candidate_manifest).resolve()
+    payload = json.loads(manifest_path.read_text(encoding="ascii"))
+    exact_fields = {
+        "schema_version": CANDIDATE_CACHE_SCHEMA,
+        "artifact_type": "loop206_packed_binary_channel",
+        "status": "passed",
+        "arm": "candidate",
+        "count": EXPECTED_CACHE_ROWS,
+        "shape": [384, 384],
+        "source_row_count": EXPECTED_DATASET_ROWS,
+        "fit_clean_rows": EXPECTED_FIT_ROWS,
+        "holdout_rows_per_corruption": EXPECTED_HOLDOUT_ROWS,
+        "source_split_counts": {"train": EXPECTED_CACHE_ROWS},
+        "allowed_runtime_splits": ["train", "train_screen_holdout"],
+        "runtime_split_counts": {"train": EXPECTED_FIT_ROWS, "train_screen_holdout": 228},
+        "corruption_counts": {"clean": 384, "gaussian_noise": 76, "low_contrast": 76},
+        "input_rgb_sha256_count": EXPECTED_CACHE_ROWS,
+        "locked_active_contour_config": asdict(_canonical_active_config()),
+    }
+    for field, expected in exact_fields.items():
+        if payload.get(field) != expected:
+            raise ValueError(f"Loop206 candidate manifest {field} contract mismatch")
+    data = payload.get("data")
+    if not isinstance(data, dict) or data.get("dtype") != "uint8":
+        raise ValueError("Loop206 candidate manifest data dtype mismatch")
+    data_file = str(data.get("file", ""))
+    if not data_file or Path(data_file).name != data_file:
+        raise ValueError("Loop206 candidate manifest data path mismatch")
+    data_path = (manifest_path.parent / data_file).resolve()
+    try:
+        data_path.relative_to(manifest_path.parent)
+    except ValueError as exc:
+        raise ValueError("Loop206 candidate manifest data path escape") from exc
+    expected_size = EXPECTED_CACHE_ROWS * 384 * 384
+    if not data_path.is_file() or data_path.stat().st_size != expected_size:
+        raise ValueError("Loop206 candidate manifest data size mismatch")
+    if not _is_sha256(data.get("sha256")) or sha256_file(data_path) != data["sha256"]:
+        raise ValueError("Loop206 candidate manifest data hash mismatch")
+
+    rows = payload.get("rows")
+    if not isinstance(rows, list) or len(rows) != EXPECTED_CACHE_ROWS:
+        raise ValueError("Loop206 candidate manifest row count mismatch")
+    rows_hash = _canonical_hash(rows)
+    if payload.get("rows_sha256") != rows_hash:
+        raise ValueError("Loop206 candidate manifest rows hash mismatch")
+    indices: list[int] = []
+    row_keys: set[tuple[str, str]] = set()
+    image_keys: set[tuple[str, str]] = set()
+    fit_fold_counts: Counter[int] = Counter()
+    holdout_views: dict[str, set[str]] = defaultdict(set)
+    holdout_indices: dict[str, int] = {}
+    holdout_samples: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("Loop206 candidate manifest row contract mismatch")
+        try:
+            raw_index = row["index"]
+            raw_fold = row["fold"]
+            raw_threshold = row["base_threshold"]
+        except KeyError as exc:
+            raise ValueError("Loop206 candidate manifest index/threshold mismatch") from exc
+        if (
+            type(raw_index) is not int
+            or type(raw_fold) is not int
+            or isinstance(raw_threshold, bool)
+            or not isinstance(raw_threshold, (int, float))
+        ):
+            raise ValueError("Loop206 candidate manifest index/threshold type mismatch")
+        index, fold, threshold = raw_index, raw_fold, float(raw_threshold)
+        indices.append(index)
+        group = str(row.get("group_key", ""))
+        sample = str(row.get("sample_id", ""))
+        image_path = str(row.get("image_path", ""))
+        corruption = str(row.get("corruption", ""))
+        if not group or not sample or not image_path or corruption not in VIEWS:
+            raise ValueError("Loop206 candidate manifest row key mismatch")
+        row_key = (group, corruption)
+        image_key = (image_path, corruption)
+        if row_key in row_keys or image_key in image_keys:
+            raise ValueError("Loop206 candidate manifest row key uniqueness mismatch")
+        row_keys.add(row_key)
+        image_keys.add(image_key)
+        if row.get("source_split") != "train":
+            raise ValueError("Loop206 candidate manifest source split policy mismatch")
+        if row.get("locked_config") != LOCKED_CONFIG_NAME:
+            raise ValueError("Loop206 candidate manifest locked config mismatch")
+        expected_threshold = (
+            EXPECTED_FIT_FOLD_THRESHOLDS[fold]
+            if fold in EXPECTED_FIT_FOLD_THRESHOLDS
+            else float(expected_base_threshold)
+        )
+        if threshold != expected_threshold:
+            raise ValueError("Loop206 candidate manifest threshold mismatch")
+        if not _is_sha256(row.get("input_rgb_sha256")):
+            raise ValueError("Loop206 candidate manifest input hash mismatch")
+        if not isinstance(row.get("candidate_fallback_used"), bool):
+            raise ValueError("Loop206 candidate manifest fallback policy mismatch")
+        if not isinstance(row.get("candidate_fallback_reason"), str):
+            raise ValueError("Loop206 candidate manifest fallback policy mismatch")
+        if fold in range(4):
+            if (
+                corruption != "clean"
+                or row.get("runtime_split") != "train"
+                or row.get("holdout_dataset_index") is not None
+            ):
+                raise ValueError("Loop206 candidate manifest fit row policy mismatch")
+            fit_fold_counts[fold] += 1
+        elif fold == 4:
+            if row.get("runtime_split") != "train_screen_holdout":
+                raise ValueError("Loop206 candidate manifest holdout runtime policy mismatch")
+            holdout_index = row.get("holdout_dataset_index")
+            if type(holdout_index) is not int:
+                raise ValueError("Loop206 candidate manifest holdout index mismatch")
+            if holdout_index not in range(EXPECTED_HOLDOUT_ROWS):
+                raise ValueError("Loop206 candidate manifest holdout index mismatch")
+            if group in holdout_indices and holdout_indices[group] != holdout_index:
+                raise ValueError("Loop206 candidate manifest holdout index mismatch")
+            if group in holdout_samples and holdout_samples[group] != sample:
+                raise ValueError("Loop206 candidate manifest holdout sample mismatch")
+            holdout_indices[group] = holdout_index
+            holdout_samples[group] = sample
+            holdout_views[group].add(corruption)
+        else:
+            raise ValueError("Loop206 candidate manifest fold policy mismatch")
+    if sorted(indices) != list(range(EXPECTED_CACHE_ROWS)) or len(set(indices)) != len(indices):
+        raise ValueError("Loop206 candidate manifest index uniqueness/bounds mismatch")
+    if fit_fold_counts != Counter({fold: 77 for fold in range(4)}):
+        raise ValueError("Loop206 candidate manifest fit fold policy mismatch")
+    if (
+        len(holdout_views) != EXPECTED_HOLDOUT_ROWS
+        or set(holdout_indices.values()) != set(range(EXPECTED_HOLDOUT_ROWS))
+        or any(views != set(VIEWS) for views in holdout_views.values())
+    ):
+        raise ValueError("Loop206 candidate manifest holdout policy mismatch")
+
+    provenance = payload.get("provenance")
+    provenance_fields = (
+        "builder_sha256",
+        "config_sha256",
+        "confirmatory_report_sha256",
+        "loop204_protocol_sha256",
+        "loop205_protocol_sha256",
+        "loop206_protocol_sha256",
+        "runtime_manifest_sha256",
+        "source_manifest_sha256",
+    )
+    if not isinstance(provenance, dict) or any(
+        not _is_sha256(provenance.get(field)) for field in provenance_fields
+    ):
+        raise ValueError("Loop206 candidate manifest provenance hash contract mismatch")
+    expected_code_hashes = {
+        "loop204_protocol_sha256": sha256_file(Path(loop204_protocol.__file__).resolve()),
+        "loop205_protocol_sha256": sha256_file(Path(loop205_protocol.__file__).resolve()),
+        "loop206_protocol_sha256": sha256_file(
+            Path(loop206_active_contour.__file__).resolve()
+        ),
+    }
+    if any(provenance[field] != expected for field, expected in expected_code_hashes.items()):
+        raise ValueError("Loop206 candidate manifest provenance code hash mismatch")
+    config_path = Path(frozen_config)
+    if not config_path.is_file() or provenance["config_sha256"] != sha256_file(config_path):
+        raise ValueError("Loop206 candidate manifest provenance config hash mismatch")
+    frozen = load_config(config_path)
+    expected_runtime_manifest_hash = str(
+        frozen.get("data", {}).get("manifest_sha256", "")
+    )
+    if provenance["runtime_manifest_sha256"] != expected_runtime_manifest_hash:
+        raise ValueError("Loop206 candidate manifest provenance runtime manifest hash mismatch")
+    return payload, data_path
+
+
 def verify_holdout_parity(
     prior: Loop206Prior,
     holdout_rows: Sequence[PriorHoldoutRow],
     candidate_manifest: str | Path,
 ) -> dict[str, Any]:
     manifest_path = Path(candidate_manifest).resolve()
-    payload = json.loads(manifest_path.read_text(encoding="ascii"))
-    if (
-        payload.get("schema_version") != CANDIDATE_CACHE_SCHEMA
-        or payload.get("status") != "passed"
-        or payload.get("arm") != "candidate"
-        or payload.get("data", {}).get("dtype") != "uint8"
-    ):
-        raise ValueError("Loop206 candidate cache manifest mismatch")
-    shape = tuple(int(value) for value in payload.get("shape", ()))
-    count = int(payload.get("count", -1))
-    data_path = manifest_path.parent / str(payload.get("data", {}).get("file", ""))
-    if shape != (384, 384) or count <= 0 or not data_path.is_file():
-        raise ValueError("Loop206 candidate cache data contract mismatch")
-    if sha256_file(data_path) != str(payload.get("data", {}).get("sha256", "")):
-        raise ValueError("Loop206 candidate cache data SHA256 mismatch")
+    payload, data_path = validate_candidate_manifest(
+        manifest_path, expected_base_threshold=prior.selected_threshold
+    )
+    shape = tuple(int(value) for value in payload["shape"])
+    count = int(payload["count"])
     clean_rows = {
         str(row["group_key"]): row
         for row in payload.get("rows", [])
@@ -508,19 +821,37 @@ def verify_holdout_parity(
     }
 
 
-def _write_receipt(path: Path, payload: Mapping[str, Any]) -> None:
-    content = dict(payload)
+def _receipt_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    content = {key: value for key, value in payload.items() if key != "content_sha256"}
     content["content_sha256"] = _canonical_hash(content)
+    return content
+
+
+def _stage_receipt(path: Path, payload: Mapping[str, Any]) -> dict[str, Any]:
+    content = _receipt_payload(payload)
     encoded = (
         json.dumps(content, indent=2, sort_keys=True, ensure_ascii=True, allow_nan=False)
         + "\n"
     ).encode("ascii")
-    temporary = path.with_name(path.name + ".tmp")
+    with path.open("xb") as handle:
+        handle.write(encoded)
+        handle.flush()
+        os.fsync(handle.fileno())
+    return content
+
+
+def _publish_no_replace(source: Path, destination: Path) -> None:
+    """Atomically publish one staged file without replacing a concurrent writer."""
+
+    os.link(source, destination)
+
+
+def _rollback_own_publish(staged: Path, published: Path) -> None:
     try:
-        temporary.write_bytes(encoded)
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
+        if staged.exists() and published.exists() and os.path.samefile(staged, published):
+            published.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def build_prior_artifact(
@@ -535,19 +866,43 @@ def build_prior_artifact(
 ) -> dict[str, Any]:
     output_path = Path(output).resolve()
     receipt_path = Path(receipt).resolve()
-    if output_path.exists() or receipt_path.exists():
-        raise FileExistsError("Loop206 prior output/receipt is immutable and already exists")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
-    staged = output_path.with_name(output_path.name + ".parity-tmp")
-    staged.unlink(missing_ok=True)
+    lock_path = output_path.with_name(output_path.name + ".build.lock")
+    lock_token = uuid.uuid4().hex
+    try:
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError as exc:
+        raise FileExistsError(f"Loop206 prior build lock already exists: {lock_path}") from exc
+    with os.fdopen(lock_fd, "w", encoding="ascii") as lock_handle:
+        lock_handle.write(lock_token)
+        lock_handle.flush()
+        os.fsync(lock_handle.fileno())
+    staging_root = Path(
+        tempfile.mkdtemp(prefix=f".{output_path.name}.build-", dir=output_path.parent)
+    )
+    staged_artifact = staging_root / output_path.name
+    staged_receipt = staging_root / receipt_path.name
     base_receipt: dict[str, Any] = {
         "schema_version": RECEIPT_SCHEMA,
         "created_at": _utc_now(),
-        "dataset_index_sha256": sha256_file(dataset_index),
-        "candidate_manifest_sha256": sha256_file(candidate_manifest),
+        "requested_output": str(output_path),
+        "requested_receipt": str(receipt_path),
     }
+    failure_details: dict[str, Any] = {}
+    artifact_published = False
     try:
+        if output_path.parent != receipt_path.parent:
+            raise ValueError("Loop206 prior output and receipt must share one directory")
+        if output_path.exists() or receipt_path.exists():
+            raise FileExistsError("Loop206 prior output/receipt is immutable and already exists")
+        base_receipt["dataset_index_sha256"] = sha256_file(dataset_index)
+        base_receipt["candidate_manifest_sha256"] = sha256_file(candidate_manifest)
+        validate_candidate_manifest(
+            candidate_manifest,
+            expected_base_threshold=EXPECTED_BASE_THRESHOLD,
+            frozen_config=frozen_config,
+        )
         fit_rows, holdout_rows, _ = load_dataset_index(
             dataset_index, dataset_roots=dataset_roots
         )
@@ -558,29 +913,24 @@ def build_prior_artifact(
             frozen_config=frozen_config,
             parity_passed=False,
         )
-        save_prior(prior, staged)
+        save_prior(prior, staged_artifact)
         parity = verify_holdout_parity(prior, holdout_rows, candidate_manifest)
         if not parity["parity_passed"]:
-            _write_receipt(
-                receipt_path,
-                {
-                    **base_receipt,
-                    "status": "failed",
-                    "fit_groups": len(fit_rows),
-                    "fit_group_sha256": prior.fit_group_sha256,
-                    "selected_threshold": prior.selected_threshold,
-                    "sklearn_version": prior.sklearn_version,
-                    "code_hashes": prior.code_hashes,
-                    "parity": parity,
-                },
-            )
+            failure_details = {
+                "fit_groups": len(fit_rows),
+                "fit_group_sha256": prior.fit_group_sha256,
+                "selected_threshold": prior.selected_threshold,
+                "sklearn_version": prior.sklearn_version,
+                "code_hashes": prior.code_hashes,
+                "parity": parity,
+            }
             raise RuntimeError(
                 "Loop206 holdout parity failed: "
                 f"{parity['contour_byte_matches']}/{parity['expected']} contours"
             )
         prior = replace(prior, parity_passed=True)
-        save_prior(prior, staged)
-        artifact_sha256 = sha256_file(staged)
+        save_prior(prior, staged_artifact)
+        artifact_sha256 = sha256_file(staged_artifact)
         passed_receipt = {
             **base_receipt,
             "status": "passed",
@@ -596,19 +946,33 @@ def build_prior_artifact(
             "code_hashes": prior.code_hashes,
             "parity": parity,
         }
-        _write_receipt(receipt_path, passed_receipt)
-        os.replace(staged, output_path)
-        return passed_receipt
+        published_receipt = _stage_receipt(staged_receipt, passed_receipt)
+        _publish_no_replace(staged_artifact, output_path)
+        artifact_published = True
+        _publish_no_replace(staged_receipt, receipt_path)
+        return published_receipt
     except Exception as exc:
-        staged.unlink(missing_ok=True)
+        if artifact_published:
+            _rollback_own_publish(staged_artifact, output_path)
         if not receipt_path.exists():
-            _write_receipt(
-                receipt_path,
-                {
-                    **base_receipt,
-                    "status": "failed",
-                    "error_type": type(exc).__name__,
-                    "error": str(exc),
-                },
-            )
+            failed_receipt = {
+                **base_receipt,
+                "status": "failed",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                **failure_details,
+            }
+            failed_stage = staging_root / f"failed-{receipt_path.name}"
+            try:
+                _stage_receipt(failed_stage, failed_receipt)
+                _publish_no_replace(failed_stage, receipt_path)
+            except FileExistsError:
+                pass
         raise
+    finally:
+        shutil.rmtree(staging_root, ignore_errors=True)
+        try:
+            if lock_path.read_text(encoding="ascii") == lock_token:
+                lock_path.unlink()
+        except FileNotFoundError:
+            pass

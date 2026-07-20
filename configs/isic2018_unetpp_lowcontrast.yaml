@@ -1,0 +1,63 @@
+project:
+  name: robust-skin-lesion-segmentation-isic2018-unetpp-lowcontrast
+  seed: 42
+
+extends: configs/isic2018_robust.yaml
+
+preprocessing:
+  normalize: true
+  clahe:
+    enabled: true
+    color_space: lab
+    clip_limit: 2.5
+    tile_grid_size: [8, 8]
+  contrast_stretch:
+    enabled: true
+    lower_percentile: 1.0
+    upper_percentile: 99.0
+  filter:
+    type: median
+    kernel_size: 3
+
+augmentation:
+  train_photometric:
+    enabled: true
+    brightness_range: [0.30, 1.35]
+    contrast_range: [0.35, 1.60]
+    gamma_range: [0.60, 2.00]
+    noise_sigma_range: [0.00, 0.04]
+    blur_probability: 0.25
+    blur_kernel_size: 3
+    jpeg_probability: 0.25
+    jpeg_quality_range: [30, 95]
+
+model:
+  name: unetpp
+  in_channels: 3
+  out_channels: 1
+  base_channels: 32
+
+training:
+  device: cuda
+  epochs: 200
+  batch_size: 32
+  learning_rate: 0.001
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+  amp: true
+  loss: bce_tversky
+  # Lower alpha/higher beta prioritizes recall, which was weak under low contrast.
+  tversky_alpha: 0.45
+  tversky_beta: 0.55
+  checkpoint_dir: runs/isic2018-unetpp-lowcontrast-checkpoints
+  scheduler:
+    type: reduce_on_plateau
+    factor: 0.5
+    patience: 8
+    min_lr: 0.000001
+  early_stopping:
+    enabled: true
+    patience: 20
+    min_delta: 0.0005

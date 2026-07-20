@@ -1,0 +1,66 @@
+project:
+  name: robust-skin-lesion-segmentation-isic2018-upgraded
+  seed: 42
+
+extends: configs/default.yaml
+
+data:
+  root: /home/admin_mugen/datasets/isic2018-task1
+  images_dir: images
+  masks_dir: masks
+  image_size: [256, 256]
+  train_split: 0.70
+  val_split: 0.15
+  test_split: 0.15
+  split_csv: data/splits/isic2018_robust_split.csv
+
+preprocessing:
+  normalize: true
+  clahe:
+    enabled: true
+    color_space: lab
+    clip_limit: 2.0
+    tile_grid_size: [8, 8]
+  filter:
+    type: median
+    kernel_size: 3
+
+augmentation:
+  train_photometric:
+    enabled: true
+    brightness_range: [0.35, 1.30]
+    contrast_range: [0.60, 1.40]
+    gamma_range: [0.70, 1.80]
+    noise_sigma_range: [0.00, 0.03]
+    blur_probability: 0.20
+    blur_kernel_size: 3
+    jpeg_probability: 0.20
+    jpeg_quality_range: [35, 95]
+
+model:
+  name: attention_unet
+  in_channels: 3
+  out_channels: 1
+  base_channels: 32
+
+training:
+  device: cuda
+  epochs: 50
+  batch_size: 32
+  learning_rate: 0.001
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+  amp: true
+  loss: bce_tversky
+  tversky_alpha: 0.7
+  tversky_beta: 0.3
+  checkpoint_dir: runs/isic2018-robust-checkpoints
+
+postprocessing:
+  threshold: 0.5
+  close_kernel: 5
+  fill_holes: true
+  min_area_ratio: 0.005
+  keep_largest: true

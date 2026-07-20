@@ -1,0 +1,12 @@
+project:
+  name: robust-skin-lesion-segmentation-isic2018-resnet34-recall-384
+  seed: 42
+
+extends: configs/isic2018_resnet34_recall.yaml
+
+data:
+  image_size: [384, 384]
+
+training:
+  batch_size: 64
+  checkpoint_dir: runs/isic2018-resnet34-recall-384-checkpoints

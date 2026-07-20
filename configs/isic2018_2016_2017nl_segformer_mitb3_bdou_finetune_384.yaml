@@ -1,0 +1,23 @@
+project:
+  name: robust-skin-lesion-segmentation-isic2018-2016-2017nl-segformer-mitb3-bdou-finetune-384
+  seed: 42
+
+extends: configs/isic2018_2016_2017nl_segformer_mitb3_384.yaml
+
+# Loop-9: boundary push on the SOTA in-domain model. Finetune b3 from its best.pt with a
+# Boundary-DoU term added to the region loss (tensor variant, no edge head), low LR, 384px
+# (directly comparable to the b3 baseline). Targets Boundary F1 + HD95 without changing arch.
+training:
+  init_checkpoint: runs/isic2018-2016-2017nl-segformer-mitb3-384-checkpoints/best.pt
+  init_strict: true
+  resume_checkpoint: ""
+  learning_rate: 0.00003
+  loss: bce_focal_tversky_bdou
+  bdou_weight: 0.5
+  checkpoint_dir: runs/isic2018-2016-2017nl-segformer-mitb3-bdou-finetune-384-checkpoints
+  early_stopping:
+    enabled: true
+    monitor: val_dice
+    mode: max
+    patience: 8
+    min_delta: 0.0001

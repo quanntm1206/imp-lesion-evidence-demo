@@ -1,0 +1,123 @@
+project:
+  name: loop206-control-train-screen-pilot20
+  seed: 206
+
+extends: configs/isic2018_2016_2017nl_segformer_mitb3_bdou_contrast_clahe_median_sog_p02_finetune_384.yaml
+
+benchmark:
+  loop: 206
+  version: clean_v3_train_screen
+  member_id: L206-control-s206
+  track: internal_train_only_pilot
+
+data:
+  manifest: data/splits/loop206_pilot_manifest.csv
+  split_csv: data/splits/loop206_pilot_manifest.csv
+  manifest_sha256: dd660b1f1f1abd0a0072f26b1c6f9f7f8d63e9ad065fc535ab60e503d68d29e9
+  image_size: [384, 384]
+  train_split: train
+  val_split: train_screen_holdout
+  cache:
+    enabled: true
+    root: /home/admin_mugen/imp_cache/dataset_resized/loop206_pilot_384
+
+model:
+  name: segformer_mit
+  smp_encoder: mit_b3
+  in_channels: 3
+  input_channels: 4
+  encoder_in_channels: 3
+  out_channels: 1
+  encoder_weights: imagenet
+  edge_aux: false
+  input_adapter:
+    enabled: true
+    initialization: rgb_identity_extra_zero
+
+training:
+  seed: 206
+  seeds: [206]
+  device: cuda
+  cuda_required: true
+  epochs: 20
+  max_epochs: 20
+  train_only: true
+  learning_rate: 0.00006
+  init_checkpoint: ""
+  resume_checkpoint: ""
+  checkpoint_dir: runs/loop206-control-train-screen-pilot20-checkpoints
+  checkpoint_metric: train_loss
+  checkpoint_mode: min
+  scheduler:
+    type: none
+  save_last: true
+  batch_size: 32
+  num_workers: 8
+  train_num_workers: 8
+  val_num_workers: 4
+  pin_memory: false
+  persistent_workers: true
+  train_persistent_workers: true
+  val_persistent_workers: false
+  prefetch_factor: 1
+  train_prefetch_factor: 1
+  val_prefetch_factor: 1
+  high_utilization:
+    enabled: true
+    override_existing: true
+    cpu_reserve_cores: 2
+    max_train_workers: 8
+    val_num_workers: 4
+    train_prefetch_factor: 1
+    val_prefetch_factor: 1
+    pin_memory: false
+    persistent_workers: true
+    torch_num_threads: 2
+    cuda_backend: true
+    cudnn_benchmark: true
+    allow_tf32: true
+    float32_matmul_precision: high
+  early_stopping:
+    enabled: false
+  runtime_resource_guard:
+    enabled: true
+    max_swap_used_gib: 0.5
+    max_swap_increase_gib: 0.05
+    check_interval_steps: 20
+  runtime_resource_monitor:
+    enabled: true
+    output_jsonl: .artifacts/preprocessing_search/loop206_leac_drlse/pilot_control_resource_trace.jsonl
+    interval_steps: 10
+  source_balanced_sampling:
+    enabled: false
+  hard_sample_sampling:
+    enabled: false
+  raw_rater_uncertainty:
+    enabled: false
+  distillation:
+    enabled: false
+  consistency:
+    enabled: false
+  boundary_curriculum:
+    enabled: false
+  label_conditioning:
+    enabled: false
+  loss: bce_focal_tversky_bdou
+  max_swap_used_gib: 0.5
+
+preprocessing:
+  extra_channel:
+    enabled: true
+    type: loop206_contour_cache
+    cache_manifest: .artifacts/preprocessing_search/loop206_leac_drlse/pilot_cache_v2_zero_control/manifest.json
+    require_input_sha256: true
+
+augmentation:
+  sog:
+    enabled: false
+  train_photometric:
+    enabled: false
+
+evaluation:
+  corruptions: [clean, low_contrast, gaussian_noise]
+  test_requires_locked_panel: true

@@ -1,0 +1,25 @@
+project:
+  name: robust-skin-lesion-segmentation-isic2018-2016-2017nl-segformer-mitb3-bdou-contrast-clahe-median-sog-p02-finetune-384
+  seed: 42
+
+extends: configs/isic2018_2016_2017nl_segformer_mitb3_bdou_contrast_clahe_median_finetune_384.yaml
+
+# Loop-20 paper-backed train-time robustness candidate:
+# Probabilistic Shades-of-Gray color constancy augmentation before the retained
+# contrast stretch + LAB CLAHE + median preprocessing. Eval remains conservative.
+augmentation:
+  train_photometric:
+    enabled: true
+    brightness_range: [1.0, 1.0]
+    contrast_range: [1.0, 1.0]
+    gamma_range: [1.0, 1.0]
+    noise_sigma_range: [0.0, 0.0]
+    blur_probability: 0.0
+    jpeg_probability: 0.0
+    shades_of_gray:
+      probability: 0.2
+      minkowski_norm: 6.0
+      gain_clip: [0.85, 1.15]
+
+training:
+  checkpoint_dir: runs/isic2018-2016-2017nl-segformer-mitb3-bdou-contrast-clahe-median-sog-p02-finetune-w4v0cache-384-checkpoints
