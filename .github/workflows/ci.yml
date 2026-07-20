@@ -1,0 +1,91 @@
+name: CPU delivery checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  delivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CUDA_VISIBLE_DEVICES: ""
+      UV_NO_PROGRESS: "1"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pinned uv and Python
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: "0.11.29"
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install CPU delivery dependencies
+        run: uv sync --locked --python 3.12 --extra dev --extra analysis --extra demo
+
+      - name: Run demo tests
+        run: |
+          mkdir -p ci-receipts
+          uv run --no-sync --python 3.12 pytest tests/demo -q --junitxml=ci-receipts/pytest.xml
+
+      - name: Rebuild deterministic paper tables
+        run: |
+          uv run --no-sync --python 3.12 python scripts/paper/build_clean_v3_tables.py \
+            --registry demo/data/evidence_registry.json \
+            --paper-dir ci-receipts/generated-paper
+          for table in evidence_scope.tex clean_v3_validation.tex loop206_ablation.tex legacy_loop170.tex; do
+            cmp "ci-receipts/generated-paper/tables/${table}" "paper/clean_v3_loop206/tables/${table}"
+          done
+          git diff --exit-code -- paper/clean_v3_loop206/tables paper/clean_v3_loop206/artifact_manifest.json
+
+      - name: Audit evidence-bound paper
+        run: |
+          uv run --no-sync --python 3.12 python scripts/paper/audit_clean_v3_paper.py \
+            --paper paper/clean_v3_loop206 \
+            --registry demo/data/evidence_registry.json \
+            --receipt ci-receipts/paper-audit.json
+
+      - name: Build paper when TeX is installed
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd paper/clean_v3_loop206
+          paper_built=false
+          latexmk_available=false
+          if command -v latexmk >/dev/null 2>&1; then
+            latexmk_available=true
+            if latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex | tee ../../ci-receipts/latex-build.log; then
+              paper_built=true
+            else
+              printf '%s\n' 'latexmk failed; trying pdflatex/bibtex fallback' | tee -a ../../ci-receipts/latex-build.log
+            fi
+          fi
+          if [[ "$paper_built" == false ]] && command -v pdflatex >/dev/null 2>&1 && command -v bibtex >/dev/null 2>&1; then
+            pdflatex -interaction=nonstopmode -halt-on-error main.tex
+            bibtex main
+            pdflatex -interaction=nonstopmode -halt-on-error main.tex
+            pdflatex -interaction=nonstopmode -halt-on-error main.tex | tee ../../ci-receipts/latex-build.log
+            paper_built=true
+          fi
+          if [[ "$paper_built" == false ]] && [[ "$latexmk_available" == true ]]; then
+            printf '%s\n' 'latexmk failed and pdflatex/bibtex fallback is unavailable.' | tee -a ../../ci-receipts/latex-build.log
+            exit 1
+          elif [[ "$paper_built" == false ]]; then
+            printf '%s\n' 'TeX runner unavailable; paper compilation skipped.' > ../../ci-receipts/latex-build.log
+          fi
+
+      - name: Upload paper and test receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: delivery-receipts
+          if-no-files-found: error
+          path: |
+            ci-receipts/
+            paper/clean_v3_loop206/main.pdf
+            paper/clean_v3_loop206/artifact_manifest.json

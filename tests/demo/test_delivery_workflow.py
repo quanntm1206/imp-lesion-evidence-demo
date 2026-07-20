@@ -1,0 +1,93 @@
+from pathlib import Path
+import re
+
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _read(relative: str) -> str:
+    return (ROOT / relative).read_text(encoding="utf-8")
+
+
+def test_windows_bootstrap_preserves_cuda_overlay_and_runs_delivery_checks() -> None:
+    script = _read("scripts/bootstrap_windows.ps1")
+
+    assert "[ValidateSet('cpu', 'cu130')]" in script
+    assert "$Venv = '.venv-win'" in script
+    assert "$Compute = 'cpu'" in script
+    assert "UV_PROJECT_ENVIRONMENT" in script
+    assert "--python 3.12" in script
+    for extra in ("--extra dev", "--extra analysis", "--extra demo"):
+        assert extra in script
+    assert "--extra train" in script
+    assert "torch==2.12.0+cu130" in script
+    assert "torchvision==0.27.0+cu130" in script
+    assert "https://download.pytorch.org/whl/cu130/" in script
+    assert "torch.cuda.is_available()" in script
+    assert "uv run --no-sync" in script
+    assert "tests/demo" in script
+    assert "build_clean_v3_tables.py" in script
+    assert "$GeneratedPaperDir" in script
+    assert "--paper-dir $GeneratedPaperDir" in script
+    assert "Get-FileHash" in script
+    assert "audit_clean_v3_paper.py" in script
+    assert "latexmk" in script
+    assert "pdflatex" in script and "bibtex" in script
+    assert "$PaperBuilt = $false" in script
+    assert "latexmk failed; trying pdflatex/bibtex fallback" in script
+    assert "No TeX toolchain found" in script
+
+
+def test_ci_is_cpu_only_reproducible_and_uploads_receipts() -> None:
+    workflow_text = _read(".github/workflows/ci.yml")
+    workflow = yaml.safe_load(workflow_text)
+    job = workflow["jobs"]["delivery"]
+    assert job["runs-on"] == "ubuntu-latest"
+    assert job["env"]["CUDA_VISIBLE_DEVICES"] == ""
+
+    uses = [step["uses"] for step in job["steps"] if "uses" in step]
+    assert uses
+    assert all(re.fullmatch(r"[^@]+@[0-9a-f]{40}", value) for value in uses)
+
+    commands = "\n".join(
+        str(step.get("run", "")) for step in job["steps"] if "run" in step
+    )
+    assert "--python 3.12" in commands
+    assert "pytest tests/demo" in commands
+    assert "build_clean_v3_tables.py" in commands
+    assert "--paper-dir ci-receipts/generated-paper" in commands
+    assert "cmp" in commands
+    assert "audit_clean_v3_paper.py" in commands
+    assert "latexmk" in commands
+    assert "if latexmk -pdf" in commands
+    assert "latexmk failed; trying pdflatex/bibtex fallback" in commands
+    assert "git diff --exit-code" in commands
+    assert "torch.cuda.is_available()" not in commands
+    assert any("paper" in str(step.get("with", {}).get("path", "")) for step in job["steps"])
+    assert any("receipt" in str(step.get("with", {}).get("path", "")) for step in job["steps"])
+
+
+def test_runbook_and_readme_define_private_two_machine_handoff() -> None:
+    runbook = _read("docs/runbooks/two-machine-delivery.md")
+    readme = _read("README.md")
+
+    for token in (
+        "paper-review",
+        "demo-runtime",
+        "RTX 4060",
+        "RTX 5060 Ti",
+        "LAN/USB",
+        "SHA-256",
+        "never through GitHub",
+        "uv run --no-sync",
+        "-Compute cu130",
+        "isPrivate",
+    ):
+        assert token in runbook
+    assert "physical laptop" in runbook.lower()
+    assert "unverified" in runbook.lower()
+    assert "two-machine-delivery.md" in readme
+    assert "bootstrap_windows.ps1" in readme
+    assert "/paper/clean_v3_loop206/main.pdf" in _read(".gitignore")

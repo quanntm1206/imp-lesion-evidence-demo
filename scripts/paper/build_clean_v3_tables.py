@@ -149,18 +149,29 @@ def build_tables(registry_path: str | Path, paper_dir: str | Path) -> dict[str, 
         "loop206_ablation": _write(tables / "loop206_ablation.tex", _loop206_table(registry)),
         "legacy_loop170": _write(tables / "legacy_loop170.tex", _legacy_table(registry)),
     }
+    manifest_path = root / "artifact_manifest.json"
+    existing_manifest: dict[str, Any] = {}
+    if manifest_path.is_file():
+        try:
+            loaded_manifest = json.loads(manifest_path.read_text(encoding="ascii"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError("invalid existing artifact manifest") from exc
+        if not isinstance(loaded_manifest, dict):
+            raise ValueError("existing artifact manifest must be an object")
+        existing_manifest = loaded_manifest
+
     manifest = {
+        **existing_manifest,
         "schema_version": "imp.paper_artifacts.v1",
         "evidence_registry_path": registry_file.as_posix(),
         "evidence_registry_sha256": registry["registry_sha256"],
         "tables": {
             name: {"path": path.relative_to(root).as_posix(), "sha256": _sha256(path)}
-            for name, path in outputs.items()
+            for name, path in sorted(outputs.items())
         },
     }
-    manifest_path = root / "artifact_manifest.json"
     manifest_path.write_text(
-        json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
+        json.dumps(manifest, indent=2, sort_keys=False, ensure_ascii=True) + "\n",
         encoding="ascii",
         newline="\n",
     )

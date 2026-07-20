@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from scripts.paper.build_clean_v3_tables import build_tables
 
@@ -35,3 +36,33 @@ def test_table_manifest_binds_registry_hash(tmp_path: Path) -> None:
     outputs = build_tables(REGISTRY, tmp_path)
     manifest = outputs["artifact_manifest"].read_text(encoding="ascii")
     assert "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32" in manifest
+
+
+def test_table_rebuild_preserves_non_table_manifest_evidence(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "artifact_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "imp.paper_artifacts.v1",
+                "figures": {"evidence_pipeline": {"path": "figures/evidence_pipeline.pdf"}},
+                "review_status": "approved",
+                "tables": {"obsolete": {"path": "tables/obsolete.tex"}},
+            }
+        ),
+        encoding="ascii",
+    )
+
+    build_tables(REGISTRY, tmp_path)
+
+    rebuilt = json.loads(manifest_path.read_text(encoding="ascii"))
+    assert rebuilt["figures"] == {
+        "evidence_pipeline": {"path": "figures/evidence_pipeline.pdf"}
+    }
+    assert rebuilt["review_status"] == "approved"
+    assert "obsolete" not in rebuilt["tables"]
+    assert set(rebuilt["tables"]) == {
+        "evidence_scope",
+        "clean_v3_validation",
+        "loop206_ablation",
+        "legacy_loop170",
+    }

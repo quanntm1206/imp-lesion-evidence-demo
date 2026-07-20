@@ -1,0 +1,99 @@
+# Two-Machine Private Delivery
+
+## Fixed Responsibilities
+
+- Main workstation, RTX 5060 Ti: artifact generation, model execution, and demo serving. Use `main` for integration and `demo-runtime` for source changes.
+- Laptop, RTX 4060 8 GB GPU and 16 GB RAM: clean-clone bootstrap, paper build, citation/read-only review, CPU tests, and an optional single-GPU smoke check. Use `paper-review` for source changes.
+- Do not load two models concurrently or claim laptop training capacity. The laptop assignment is review and validation, not full training.
+- Exchange code only by private GitHub push/pull. Exchange weights, priors, caches, and data only by private LAN/USB after SHA-256 verification; never through GitHub.
+
+## Windows Bootstrap
+
+Prerequisites: Git, `uv`, Python install access through `uv`, and either `latexmk` or both `pdflatex` and `bibtex`. The script creates the configurable `.venv-win` environment with Python 3.12 and the `dev`, `analysis`, and `demo` extras, then runs CPU tests, deterministic table generation, the paper audit, and the paper build.
+
+CPU bootstrap for a clean laptop clone:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1
+```
+
+Different environment directory:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1 -Venv E:\venvs\imp-paper
+```
+
+Optional RTX 4060 smoke environment:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1 -Compute cu130
+```
+
+`-Compute cu130` first installs the `train` extra, then overlays the tested `torch==2.12.0+cu130` and `torchvision==0.27.0+cu130` wheels from the official CUDA 13.0 index. It fails unless both versions match and `torch.cuda.is_available()` is true. A normal `uv sync` resolves the Windows lock to CPU wheels and can replace this overlay. After the overlay, run GPU-related project commands with `.venv-win\Scripts\python.exe` directly or `uv run --no-sync`; do not run an ordinary `uv sync` in that environment.
+
+The smoke option verifies the environment only. Run a single model at a time. Keep weights outside GitHub.
+
+## Private GitHub Provisioning
+
+The owner is `quanntm1206`. Never substitute a public repository. Authenticate, create the private repository, then verify visibility before any push:
+
+```powershell
+gh auth status
+gh repo create quanntm1206/imp-lesion-evidence-demo --private --source . --remote origin
+gh repo view quanntm1206/imp-lesion-evidence-demo --json isPrivate,sshUrl,url
+```
+
+Require `isPrivate: true`. Stop on false, missing, or ambiguous output. If the repository exists, resolve its authenticated SSH URL and add the remote only when `origin` is absent:
+
+```powershell
+$repo = gh repo view quanntm1206/imp-lesion-evidence-demo --json isPrivate,sshUrl | ConvertFrom-Json
+if ($repo.isPrivate -ne $true) { throw 'Repository privacy is not verified' }
+git remote add origin $repo.sshUrl
+```
+
+Push without force. Task 12 preserves local `main`; integration/default-branch changes belong to final delivery:
+
+```powershell
+git push -u origin rescue/paper-demo
+git push origin main
+git push origin rescue/paper-demo:paper-review
+git push origin rescue/paper-demo:demo-runtime
+```
+
+## Laptop Handoff
+
+Physical laptop execution remains unverified until the operator runs it. One-command CPU handoff from PowerShell:
+
+```powershell
+$repo = gh repo view quanntm1206/imp-lesion-evidence-demo --json isPrivate,sshUrl | ConvertFrom-Json; if ($repo.isPrivate -ne $true) { throw 'Repository privacy is not verified' }; git clone --branch paper-review $repo.sshUrl E:\imp-lesion-evidence-demo; Set-Location E:\imp-lesion-evidence-demo; powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1; git status --short
+```
+
+Expected operator receipt: bootstrap exits zero; demo tests pass; paper audit reports `passed=true errors=0`; the PDF builds; `git status --short` emits nothing. Record the command exit status and commit SHA. Do not report physical-laptop verification before that receipt exists.
+
+## Artifact Transfer
+
+On the main workstation, write a hash manifest before LAN/USB transfer:
+
+```powershell
+Get-FileHash -Algorithm SHA256 E:\private-artifacts\* | Format-Table Path,Hash -AutoSize
+```
+
+On the laptop, calculate SHA-256 again. Compare every filename and hash to the source manifest before use. Stop on a mismatch. Do not commit, upload, paste, or attach weights, priors, datasets, caches, environment values, tokens, or absolute private paths to GitHub issues or CI logs.
+
+## CI Contract
+
+CI starts from GitHub's clean checkout on an Ubuntu CPU runner. It installs pinned `uv` and Python 3.12, syncs only `dev`, `analysis`, and `demo`, runs `tests/demo`, rebuilds tracked tables, rejects deterministic drift, audits the paper, compiles LaTeX when a runner is installed, and uploads test/paper receipts. It requires no model weights, private cache, dataset, CUDA, or GPU. GPU integration remains a local receipt.
+
+## Official Sources
+
+Fetched 2026-07-20:
+
+- `UV_PROJECT_ENVIRONMENT`: https://docs.astral.sh/uv/reference/environment/#uv_project_environment
+- `uv run --no-sync`: https://docs.astral.sh/uv/reference/cli/#uv-run
+- GitHub Actions integration for `uv`: https://docs.astral.sh/uv/guides/integration/github/
+- Full-commit action pinning guidance: https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions
+- `uv` 0.11.29 release used by CI: https://github.com/astral-sh/uv/releases/tag/0.11.29
+- `actions/checkout` v7.0.1 source: https://github.com/actions/checkout/releases/tag/v7.0.1
+- `astral-sh/setup-uv` v8.3.2 source: https://github.com/astral-sh/setup-uv/releases/tag/v8.3.2
+- `actions/upload-artifact` v7.0.1 source: https://github.com/actions/upload-artifact/releases/tag/v7.0.1
+- Exact CUDA 13.0 PyTorch wheel indexes: https://download.pytorch.org/whl/cu130/torch/ and https://download.pytorch.org/whl/cu130/torchvision/

@@ -33,6 +33,7 @@ uploads/
 cloudflared*.log
 
 # LaTeX build products
+/paper/clean_v3_loop206/main.pdf
 *.aux
 *.bbl
 *.bcf
