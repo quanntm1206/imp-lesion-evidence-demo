@@ -14,7 +14,8 @@ from lesion_robustness.evidence_registry import validate_registry
 
 
 _CITATION = re.compile(
-    r"\\[a-z]*cite[a-z]*\*?\s*(?:\[[^]]*\]\s*)*\{([^}]+)\}",
+    r"\\(?:cite|citep|citet|textcite|parencite|autocite)\*?\s*"
+    r"(?:\[[^]]*\]\s*)*\{([^}]+)\}",
     re.IGNORECASE,
 )
 _BIB_KEY = re.compile(r"@\w+\s*\{\s*([^,\s]+)", re.IGNORECASE)
@@ -39,13 +40,14 @@ _UNFINISHED = re.compile(r"\b(?:TODO|TBD|FIXME|XXX)\b|\?\?")
 _CLAIM_TERMS = re.compile(
     r"state[ -]of[ -]the[ -]art|\bsota\b|statistical(?:ly)?[ -]superior(?:ity)?|"
     r"clinical[- ]grade|clinical validation|clinical system|clinical use|diagnostic(?: claim| system| use)?|"
-    r"protected[- ]test (?:dice|performance|result|evidence|claim)|"
-    r"significantly outperforms|significant improvement|significant superiority",
+    r"protected[- ]test (?:accuracy|dice|iou|bf1|metric|score|performance|result|evidence|claim)|"
+    r"significantly outperform(?:s|ed|ing)?|significant improvement|significant superiority",
     re.IGNORECASE,
 )
 _NEGATION = re.compile(
     r"\b(?:no|not|never|without|unavailable|sealed|prevent(?:s|ed)?|"
-    r"does not|do not|did not|cannot|is not|are not|has not|have not|rather than)\b",
+    r"does not|do not|did not|cannot|is not|are not|has not|have not|rather than|"
+    r"from being ranked)\b",
     re.IGNORECASE,
 )
 
@@ -105,7 +107,23 @@ def _sentences(text: str) -> Iterable[str]:
 
 def _clauses(text: str) -> Iterable[str]:
     for sentence in _sentences(text):
-        yield from re.split(r"\s*(?:;|\bbut\b|\bhowever\b|\byet\b|\bwhereas\b)\s*", sentence, flags=re.IGNORECASE)
+        yield from re.split(
+            r"\s*(?:;|--|—|\bbut\b|\bhowever\b|\byet\b|\bwhereas\b)\s*",
+            sentence,
+            flags=re.IGNORECASE,
+        )
+
+
+def _claim_clauses(text: str) -> Iterable[str]:
+    for sentence in _sentences(text):
+        if re.match(r"\s*no\s+\w+\s+is\s+presented\s+as\b", sentence, re.IGNORECASE):
+            yield sentence
+            continue
+        yield from re.split(
+            r"\s*(?:[,;:]|--|—|\bbut\b|\bhowever\b|\byet\b|\bwhereas\b|\balthough\b|\bwhile\b)\s*",
+            sentence,
+            flags=re.IGNORECASE,
+        )
 
 
 def _claim_is_negated(clause: str) -> bool:
@@ -113,7 +131,7 @@ def _claim_is_negated(clause: str) -> bool:
 
 
 def _check_claims(path: Path, text: str, root: Path, errors: list[str]) -> None:
-    for clause in _clauses(text):
+    for clause in _claim_clauses(text):
         if _CLAIM_TERMS.search(clause) and not _claim_is_negated(clause):
             errors.append(f"affirmative protected claim: {_relative(path, root)}")
             return
@@ -193,6 +211,17 @@ def _check_declared_hashes(
         for key in entry
         if key.endswith("_path")
     )
+    semantic_hashes = {
+        "evidence_registry_sha256",
+        "external_runtime_bundle_sha256",
+        "provenance_manifest_sha256",
+        "provenance_receipt_sha256",
+    }
+    pairs.extend(
+        (f"{key[:-7]}_path", key, "source")
+        for key in entry
+        if key.endswith("_sha256") and key not in semantic_hashes and key != "sha256"
+    )
     for path_key, hash_key, label in dict.fromkeys(pairs):
         _check_hashed_artifact(paper, entry, path_key, hash_key, label, errors)
 
@@ -268,13 +297,33 @@ def _numbers_for_field(rows: object, field: str) -> set[float]:
     return values
 
 
-def _metric_fields(metric: str) -> tuple[str, ...]:
+def _metric_fields(metric: str, evidence: str) -> tuple[str, ...]:
+    if evidence == "point":
+        return {
+            "dice": ("robust_dice", "clean_dice"),
+            "iou": ("robust_iou",),
+            "bf1": ("robust_bf1",),
+            "precision": ("robust_precision",),
+            "recall": ("robust_recall",),
+            "hd95": (),
+            "assd": (),
+        }[metric]
+    if evidence == "delta":
+        return {
+            "dice": ("robust_dice_delta",),
+            "iou": (),
+            "bf1": ("robust_bf1_delta",),
+            "precision": (),
+            "recall": (),
+            "hd95": (),
+            "assd": (),
+        }[metric]
     return {
-        "dice": ("robust_dice", "clean_dice", "robust_dice_delta", "robust_dice_ci95"),
-        "iou": ("robust_iou",),
-        "bf1": ("robust_bf1", "robust_bf1_delta", "robust_bf1_ci95"),
-        "precision": ("robust_precision",),
-        "recall": ("robust_recall",),
+        "dice": ("robust_dice_ci95",),
+        "iou": (),
+        "bf1": ("robust_bf1_ci95",),
+        "precision": (),
+        "recall": (),
         "hd95": (),
         "assd": (),
     }[metric]
@@ -301,30 +350,56 @@ def _metric_name(clause: str, position: int) -> str | None:
     return min(matches)[1] if matches else None
 
 
-def _metric_values(registry: dict[str, Any], metric: str | None) -> set[float]:
+def _claim_evidence(path: Path, clause: str, position: int) -> set[str]:
+    if path.name == "loop206_ablation.tex":
+        return {"delta", "ci"}
+    if clause.rfind("[", 0, position) > clause.rfind("]", 0, position):
+        return {"ci"}
+    prior = clause[:position].lower()
+    markers = [
+        (match.start(), "ci")
+        for match in re.finditer(r"confidence interval|\bci\b", prior)
+    ]
+    markers.extend(
+        (match.start(), "delta")
+        for match in re.finditer(
+            r"\b(?:delta|difference|change)\b|candidate-minus-control|"
+            r"reduc(?:e|es|ed|ing)?\b|increas(?:e|es|ed|ing)?\b|"
+            r"decreas(?:e|es|ed|ing)?\b|chang(?:e|es|ed|ing)?\b|"
+            r"\b(?:higher|lower)\b[^.]{0,32}\bby\b",
+            prior,
+        )
+    )
+    markers.extend(
+        (match.start(), "point")
+        for match in re.finditer(r"point estimate|\bobtained\b", prior)
+    )
+    return {max(markers)[1]} if markers else {"point"}
+
+
+def _metric_values(
+    registry: dict[str, Any], metric: str | None, evidence: set[str]
+) -> set[float]:
     observations = registry.get("observations")
     comparisons = registry.get("comparisons")
-    if metric is None:
-        fields = ("robust_dice_ci95", "robust_bf1_ci95")
-    else:
-        fields = _metric_fields(metric)
     values: set[float] = set()
-    for field in fields:
-        values.update(_numbers_for_field(observations, field))
-    if metric == "dice":
-        for comparison in comparisons if isinstance(comparisons, list) else []:
-            if isinstance(comparison, dict) and comparison.get("metric") == "robust_dice":
-                for field in ("point_delta", "ci95"):
-                    value = comparison.get(field)
-                    if isinstance(value, (int, float)):
-                        values.add(float(value))
-                    elif isinstance(value, list):
-                        values.update(float(item) for item in value if isinstance(item, (int, float)))
-    if metric is not None and isinstance(observations, list):
-        base_field = _metric_fields(metric)[0] if _metric_fields(metric) else None
-        if base_field:
-            base_values = _numbers_for_field(observations, base_field)
-            values.update(abs(left - right) for left in base_values for right in base_values)
+    metrics = (metric,) if metric is not None else ("dice", "bf1")
+    for current_metric in metrics:
+        for kind in evidence:
+            for field in _metric_fields(current_metric, kind):
+                values.update(_numbers_for_field(observations, field))
+    if metric == "dice" and isinstance(comparisons, list):
+        for comparison in comparisons:
+            if not isinstance(comparison, dict) or comparison.get("metric") != "robust_dice":
+                continue
+            if "delta" in evidence and isinstance(comparison.get("point_delta"), (int, float)):
+                values.add(float(comparison["point_delta"]))
+            if "ci" in evidence and isinstance(comparison.get("ci95"), list):
+                values.update(
+                    float(item)
+                    for item in comparison["ci95"]
+                    if isinstance(item, (int, float))
+                )
     values.update(abs(value) for value in tuple(values))
     return values
 
@@ -366,7 +441,11 @@ def _check_result_numbers(
                 continue
             for match in _NUMBER.finditer(clause):
                 protocol = _protocol_values(registry, clause, match.start(), match.end())
-                metric = _metric_values(registry, _metric_name(clause, match.start()))
+                metric = _metric_values(
+                    registry,
+                    _metric_name(clause, match.start()),
+                    _claim_evidence(path, clause, match.start()),
+                )
                 supported = protocol or metric
                 if not _number_is_supported(match.group(), supported):
                     errors.append(

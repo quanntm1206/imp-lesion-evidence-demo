@@ -110,6 +110,23 @@ def test_audit_rejects_dataset_count_as_a_metric_value(tmp_path: Path) -> None:
     assert any("unsupported numeric result" in error for error in result.errors)
 
 
+@pytest.mark.parametrize("value", ["0.0046", "-0.0313"])
+def test_audit_rejects_undeclared_dice_point_estimates(
+    tmp_path: Path, value: str
+) -> None:
+    result = audit_paper(make_minimal_paper(tmp_path, f"Robust Dice was {value}."), REGISTRY)
+
+    assert any("unsupported numeric result" in error for error in result.errors)
+
+
+def test_audit_allows_declared_dice_delta_in_delta_context(tmp_path: Path) -> None:
+    result = audit_paper(
+        make_minimal_paper(tmp_path, "Robust Dice delta was -0.0313."), REGISTRY
+    )
+
+    assert not any("unsupported numeric result" in error for error in result.errors)
+
+
 def test_audit_rejects_registry_source_hash_drift(tmp_path: Path) -> None:
     payload = json.loads(REGISTRY.read_text(encoding="ascii"))
     payload["sources"][0]["sha256"] = "0" * 64
@@ -139,6 +156,18 @@ def test_audit_requires_editable_source_hash(tmp_path: Path) -> None:
     manifest_path = paper / "artifact_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="ascii"))
     del manifest["figures"]["evidence_pipeline"]["editable_source_sha256"]
+    manifest_path.write_text(json.dumps(manifest), encoding="ascii")
+
+    result = audit_paper(paper, REGISTRY)
+
+    assert "missing source hash" in result.errors
+
+
+def test_audit_rejects_orphan_editable_source_hash(tmp_path: Path) -> None:
+    paper = _copy_paper(tmp_path)
+    manifest_path = paper / "artifact_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="ascii"))
+    del manifest["figures"]["evidence_pipeline"]["editable_source_path"]
     manifest_path.write_text(json.dumps(manifest), encoding="ascii")
 
     result = audit_paper(paper, REGISTRY)
@@ -246,8 +275,27 @@ def test_audit_rejects_affirmative_clause_after_negated_clause(tmp_path: Path) -
 @pytest.mark.parametrize(
     "claim",
     [
+        "Although the baseline is not SOTA, ours is state-of-the-art.",
+        "While the baseline is not SOTA, ours is state-of-the-art.",
+    ],
+)
+def test_audit_rejects_affirmative_claim_after_subordinate_negation(
+    tmp_path: Path, claim: str
+) -> None:
+    result = audit_paper(make_minimal_paper(tmp_path, claim), REGISTRY)
+
+    assert any("affirmative protected claim" in error for error in result.errors)
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
         "The protected-test Dice was 0.9019.",
+        "The protected-test accuracy was 0.9019.",
+        "The protected-test metric was 0.9019.",
         "The candidate significantly outperforms the baseline.",
+        "The candidate significantly outperformed the baseline.",
+        "The candidate is significantly outperforming the baseline.",
     ],
 )
 def test_audit_rejects_additional_affirmative_claims(
@@ -263,6 +311,15 @@ def test_audit_rejects_undefined_generic_cite_macro(tmp_path: Path, macro: str) 
     result = audit_paper(make_minimal_paper(tmp_path, f"\\{macro}{{missing_key}}"), REGISTRY)
 
     assert any("undefined citation key" in error for error in result.errors)
+
+
+def test_audit_ignores_citation_style_commands(tmp_path: Path) -> None:
+    result = audit_paper(
+        make_minimal_paper(tmp_path, "\\setcitestyle{round}\\citestyle{authoryear}"),
+        REGISTRY,
+    )
+
+    assert not any("undefined citation key" in error for error in result.errors)
 
 
 def test_cli_returns_nonzero_and_writes_path_free_failure_receipt(tmp_path: Path) -> None:
