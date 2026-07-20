@@ -35,7 +35,7 @@ preprocessing:
 data:
   cache:
     enabled: true
-    root: /home/admin_mugen/imp_cache/dataset_resized/isic2018_2016_2017nl_384
+    root: ${IMP_CACHE_ROOT}/dataset_resized/isic2018_2016_2017nl_384
 
 training:
   num_workers: 4

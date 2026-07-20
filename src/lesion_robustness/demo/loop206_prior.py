@@ -19,6 +19,7 @@ from lesion_robustness import loop204_protocol, loop205_protocol, loop206_active
 from lesion_robustness.config import load_config
 from lesion_robustness.corruptions import apply_corruption, deterministic_corruption_kwargs
 from lesion_robustness.data_manifest import sha256_rgb
+from lesion_robustness.demo.immutable_io import ImmutableSnapshot
 from lesion_robustness.image_utils import read_mask, read_rgb, resize_image_and_mask
 from lesion_robustness.packed_extra_channel import sha256_rgb_array
 from lesion_robustness.preprocessing import preprocess_image_from_config
@@ -130,6 +131,13 @@ class PriorHoldoutRow:
 
 
 @dataclass(frozen=True)
+class ValidatedCandidateCache:
+    payload: dict[str, Any]
+    manifest_sha256: str
+    data_snapshot: ImmutableSnapshot
+
+
+@dataclass(frozen=True)
 class Loop206Prior:
     regressor: Any
     selected_threshold: float
@@ -218,7 +226,7 @@ def fit_deployment_prior(
     n_jobs: int = 1,
     manifest_sha256: str | None = None,
     frozen_config: str | Path | None = None,
-    parity_passed: bool = True,
+    parity_passed: bool = False,
 ) -> Loop206Prior:
     image_size = _validate_fit_rows(fit_rows)
     runtime_payload = _runtime_payload(image_size=image_size, frozen_config=frozen_config)
@@ -341,16 +349,20 @@ def _validate_loaded_prior(prior: Loop206Prior) -> None:
         raise ValueError("Loop206 prior regressor feature count mismatch")
 
 
-def load_prior(path: str | Path, *, expected_sha256: str) -> Loop206Prior:
+def load_prior(
+    path: str | Path,
+    *,
+    expected_sha256: str,
+    _snapshot: ImmutableSnapshot | None = None,
+) -> Loop206Prior:
     import joblib
 
-    source = Path(path)
-    actual_sha256 = sha256_file(source)
-    if actual_sha256 != str(expected_sha256).strip().lower():
+    snapshot = _snapshot or ImmutableSnapshot.read(path)
+    if snapshot.sha256 != str(expected_sha256).strip().lower():
         raise ValueError(
-            f"Loop206 prior artifact SHA256 mismatch: expected {expected_sha256}, got {actual_sha256}"
+            f"Loop206 prior artifact SHA256 mismatch: expected {expected_sha256}, got {snapshot.sha256}"
         )
-    loaded = joblib.load(source)
+    loaded = joblib.load(snapshot.open())
     if not isinstance(loaded, Loop206Prior):
         raise ValueError("Loop206 prior artifact type mismatch")
     _validate_loaded_prior(loaded)
@@ -363,11 +375,13 @@ def _receipt_hash(payload: Mapping[str, Any]) -> str:
     )
 
 
-def _load_passed_receipt(path: str | Path) -> dict[str, Any]:
+def _load_passed_receipt(
+    path: str | Path, *, _snapshot: ImmutableSnapshot | None = None
+) -> dict[str, Any]:
     import sklearn
 
-    receipt_path = Path(path)
-    payload = json.loads(receipt_path.read_text(encoding="ascii"))
+    snapshot = _snapshot or ImmutableSnapshot.read(path)
+    payload = json.loads(snapshot.text("ascii"))
     if not isinstance(payload, dict) or payload.get("schema_version") != RECEIPT_SCHEMA:
         raise ValueError("Loop206 deployment receipt schema mismatch")
     if payload.get("status") != "passed":
@@ -430,12 +444,25 @@ def load_deployment_prior(
 ) -> Loop206Prior:
     """Load the Task5 prior only after validating its immutable parity receipt."""
 
-    receipt = _load_passed_receipt(receipt_path)
-    artifact = Path(artifact_path)
-    actual_artifact_sha256 = sha256_file(artifact)
-    if actual_artifact_sha256 != receipt["artifact_sha256"]:
+    prior, _ = load_deployment_prior_with_receipt_hash(artifact_path, receipt_path)
+    return prior
+
+
+def load_deployment_prior_with_receipt_hash(
+    artifact_path: str | Path, receipt_path: str | Path
+) -> tuple[Loop206Prior, str]:
+    """Return the prior and hash of the exact receipt bytes that authorized it."""
+
+    receipt_snapshot = ImmutableSnapshot.read(receipt_path)
+    receipt = _load_passed_receipt(receipt_path, _snapshot=receipt_snapshot)
+    artifact_snapshot = ImmutableSnapshot.read(artifact_path)
+    if artifact_snapshot.sha256 != receipt["artifact_sha256"]:
         raise ValueError("Loop206 deployment artifact hash mismatch")
-    prior = load_prior(artifact, expected_sha256=receipt["artifact_sha256"])
+    prior = load_prior(
+        artifact_path,
+        expected_sha256=receipt["artifact_sha256"],
+        _snapshot=artifact_snapshot,
+    )
     if prior.parity_passed is not True:
         raise ValueError("Loop206 deployment artifact parity flag mismatch")
     bindings = (
@@ -456,7 +483,7 @@ def load_deployment_prior(
     ):
         if _canonical_hash(actual) != _canonical_hash(expected):
             raise ValueError(f"Loop206 deployment receipt {label} mismatch")
-    return prior
+    return prior, receipt_snapshot.sha256
 
 
 def _safe_index_path(root: Path, relative: object) -> Path:
@@ -486,10 +513,14 @@ def _default_dataset_roots(dataset_index: Path) -> list[Path]:
 
 
 def load_dataset_index(
-    dataset_index: str | Path, *, dataset_roots: Sequence[str | Path] = ()
+    dataset_index: str | Path,
+    *,
+    dataset_roots: Sequence[str | Path] = (),
+    _snapshot: ImmutableSnapshot | None = None,
 ) -> tuple[list[PriorFitRow], list[PriorHoldoutRow], dict[str, Any]]:
     index_path = Path(dataset_index).resolve()
-    payload = json.loads(index_path.read_text(encoding="ascii"))
+    snapshot = _snapshot or ImmutableSnapshot.read(index_path)
+    payload = json.loads(snapshot.text("ascii"))
     if payload.get("schema_version") != DATASET_INDEX_SCHEMA:
         raise ValueError("Loop206 dataset index schema mismatch")
     rows = list(payload.get("rows", []))
@@ -592,9 +623,10 @@ def validate_candidate_manifest(
     *,
     expected_base_threshold: float = EXPECTED_BASE_THRESHOLD,
     frozen_config: str | Path = DEFAULT_FROZEN_CONFIG,
-) -> tuple[dict[str, Any], Path]:
+) -> ValidatedCandidateCache:
     manifest_path = Path(candidate_manifest).resolve()
-    payload = json.loads(manifest_path.read_text(encoding="ascii"))
+    manifest_snapshot = ImmutableSnapshot.read(manifest_path)
+    payload = json.loads(manifest_snapshot.text("ascii"))
     exact_fields = {
         "schema_version": CANDIDATE_CACHE_SCHEMA,
         "artifact_type": "loop206_packed_binary_channel",
@@ -627,9 +659,13 @@ def validate_candidate_manifest(
     except ValueError as exc:
         raise ValueError("Loop206 candidate manifest data path escape") from exc
     expected_size = EXPECTED_CACHE_ROWS * 384 * 384
-    if not data_path.is_file() or data_path.stat().st_size != expected_size:
+    try:
+        data_snapshot = ImmutableSnapshot.read(data_path)
+    except FileNotFoundError as exc:
+        raise ValueError("Loop206 candidate manifest data size mismatch") from exc
+    if data_snapshot.size != expected_size:
         raise ValueError("Loop206 candidate manifest data size mismatch")
-    if not _is_sha256(data.get("sha256")) or sha256_file(data_path) != data["sha256"]:
+    if not _is_sha256(data.get("sha256")) or data_snapshot.sha256 != data["sha256"]:
         raise ValueError("Loop206 candidate manifest data hash mismatch")
 
     rows = payload.get("rows")
@@ -761,18 +797,24 @@ def validate_candidate_manifest(
     )
     if provenance["runtime_manifest_sha256"] != expected_runtime_manifest_hash:
         raise ValueError("Loop206 candidate manifest provenance runtime manifest hash mismatch")
-    return payload, data_path
+    return ValidatedCandidateCache(
+        payload=payload,
+        manifest_sha256=manifest_snapshot.sha256,
+        data_snapshot=data_snapshot,
+    )
 
 
 def verify_holdout_parity(
     prior: Loop206Prior,
     holdout_rows: Sequence[PriorHoldoutRow],
     candidate_manifest: str | Path,
+    *,
+    _validated_cache: ValidatedCandidateCache | None = None,
 ) -> dict[str, Any]:
-    manifest_path = Path(candidate_manifest).resolve()
-    payload, data_path = validate_candidate_manifest(
-        manifest_path, expected_base_threshold=prior.selected_threshold
+    validated = _validated_cache or validate_candidate_manifest(
+        candidate_manifest, expected_base_threshold=prior.selected_threshold
     )
+    payload = validated.payload
     shape = tuple(int(value) for value in payload["shape"])
     count = int(payload["count"])
     clean_rows = {
@@ -782,7 +824,12 @@ def verify_holdout_parity(
     }
     if len(holdout_rows) != EXPECTED_HOLDOUT_ROWS or len(clean_rows) != EXPECTED_HOLDOUT_ROWS:
         raise ValueError("Loop206 holdout clean parity row count mismatch")
-    cache = np.memmap(data_path, mode="r", dtype=np.uint8, shape=(count, *shape))
+    cache = np.memmap(
+        validated.data_snapshot.open(),
+        mode="r",
+        dtype=np.uint8,
+        shape=(count, *shape),
+    )
     input_hash_matches = 0
     contour_matches = 0
     mismatches: list[str] = []
@@ -816,8 +863,8 @@ def verify_holdout_parity(
         "contour_byte_matches": contour_matches,
         "parity_passed": passed,
         "mismatch_groups": sorted(set(mismatches)),
-        "candidate_manifest_sha256": sha256_file(manifest_path),
-        "candidate_data_sha256": sha256_file(data_path),
+        "candidate_manifest_sha256": validated.manifest_sha256,
+        "candidate_data_sha256": validated.data_snapshot.sha256,
     }
 
 
@@ -896,15 +943,16 @@ def build_prior_artifact(
             raise ValueError("Loop206 prior output and receipt must share one directory")
         if output_path.exists() or receipt_path.exists():
             raise FileExistsError("Loop206 prior output/receipt is immutable and already exists")
-        base_receipt["dataset_index_sha256"] = sha256_file(dataset_index)
-        base_receipt["candidate_manifest_sha256"] = sha256_file(candidate_manifest)
-        validate_candidate_manifest(
+        dataset_snapshot = ImmutableSnapshot.read(dataset_index)
+        validated_cache = validate_candidate_manifest(
             candidate_manifest,
             expected_base_threshold=EXPECTED_BASE_THRESHOLD,
             frozen_config=frozen_config,
         )
+        base_receipt["dataset_index_sha256"] = dataset_snapshot.sha256
+        base_receipt["candidate_manifest_sha256"] = validated_cache.manifest_sha256
         fit_rows, holdout_rows, _ = load_dataset_index(
-            dataset_index, dataset_roots=dataset_roots
+            dataset_index, dataset_roots=dataset_roots, _snapshot=dataset_snapshot
         )
         prior = fit_deployment_prior(
             fit_rows,
@@ -914,7 +962,12 @@ def build_prior_artifact(
             parity_passed=False,
         )
         save_prior(prior, staged_artifact)
-        parity = verify_holdout_parity(prior, holdout_rows, candidate_manifest)
+        parity = verify_holdout_parity(
+            prior,
+            holdout_rows,
+            candidate_manifest,
+            _validated_cache=validated_cache,
+        )
         if not parity["parity_passed"]:
             failure_details = {
                 "fit_groups": len(fit_rows),

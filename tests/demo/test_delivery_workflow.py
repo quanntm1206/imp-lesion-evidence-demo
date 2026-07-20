@@ -69,11 +69,28 @@ def test_ci_is_cpu_only_reproducible_and_uploads_receipts() -> None:
     assert "audit_clean_v3_paper.py" in commands
     assert "--source-verification registry-only" in commands
     assert "latexmk" in commands
-    assert "if latexmk -pdf" in commands
-    assert "latexmk failed; trying pdflatex/bibtex fallback" in commands
+    assert "apt-get install" in commands
+    assert "texlive" in commands
+    assert "latexmk -C" in commands
+    assert "latexmk -pdf" in commands
+    assert "pdfinfo" in commands
+    assert "TeX runner unavailable; paper compilation skipped" not in commands
+    for receipt_field in (
+        "GITHUB_SHA",
+        "built_pdf_sha256",
+        "pages",
+        "bytes",
+        "build_command",
+        "status",
+    ):
+        assert receipt_field in commands
     assert "git diff --exit-code" in commands
     assert "torch.cuda.is_available()" not in commands
-    assert any("paper" in str(step.get("with", {}).get("path", "")) for step in job["steps"])
+    upload_paths = "\n".join(
+        str(step.get("with", {}).get("path", "")) for step in job["steps"]
+    )
+    assert "ci-receipts/paper/main.pdf" in upload_paths
+    assert "paper/clean_v3_loop206/main.pdf" not in upload_paths
     assert any("receipt" in str(step.get("with", {}).get("path", "")) for step in job["steps"])
 
 

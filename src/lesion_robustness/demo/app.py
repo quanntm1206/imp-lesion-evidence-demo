@@ -8,9 +8,18 @@ from dataclasses import dataclass, replace
 import json
 import os
 from pathlib import Path
+import re
+import stat
 import tempfile
 from typing import Any, Mapping, Sequence
 import warnings
+
+from PIL import Image as PILImage
+
+MAX_UPLOAD_PIXELS = 16_000_000
+MAX_UPLOAD_BYTES = 16 * 1024 * 1024
+PILImage.MAX_IMAGE_PIXELS = MAX_UPLOAD_PIXELS
+warnings.filterwarnings("error", category=PILImage.DecompressionBombWarning)
 
 import gradio as gr
 import numpy as np
@@ -256,6 +265,41 @@ def _runtime(registry: Mapping[str, Any]) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
+def _has_reparse_point(path: Path) -> bool:
+    attributes = int(getattr(path.lstat(), "st_file_attributes", 0))
+    is_junction = bool(getattr(os.path, "isjunction", lambda _path: False)(path))
+    reparse_flag = int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+    return bool(attributes & reparse_flag) or path.is_symlink() or is_junction
+
+
+def _verified_launcher_session() -> Path:
+    configured = os.environ.get("IMP_LOOP206_DEMO_SESSION", "").strip()
+    if not configured:
+        raise RuntimeError("Loop206 application requires the guarded launcher")
+    root = ROOT.resolve()
+    runtime_root = (root / "demo_runtime").resolve()
+    sessions = (runtime_root / "sessions").resolve()
+    session = Path(configured).expanduser().resolve()
+    try:
+        session.relative_to(sessions)
+    except ValueError as exc:
+        raise RuntimeError("Loop206 application requires the guarded launcher") from exc
+    if (
+        not session.is_dir()
+        or session.parent != sessions
+        or re.fullmatch(r"demo-[0-9a-f]{32}", session.name) is None
+    ):
+        raise RuntimeError("Loop206 application requires the guarded launcher")
+    for path in (runtime_root, sessions, session):
+        if not path.is_dir() or _has_reparse_point(path):
+            raise RuntimeError("Loop206 application requires the guarded launcher")
+    for name in ("GRADIO_TEMP_DIR", "TMP", "TEMP"):
+        value = os.environ.get(name, "").strip()
+        if not value or Path(value).expanduser().resolve() != session:
+            raise RuntimeError("Loop206 application requires the guarded launcher")
+    return session
+
+
 def create_app(
     service: Loop206ComparisonService, registry: Mapping[str, Any]
 ) -> gr.Blocks:
@@ -489,7 +533,7 @@ def _build_runtime_context(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Launch the audited Loop206 workbench")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", choices=("127.0.0.1",), default="127.0.0.1")
     parser.add_argument("--port", type=int, default=7860)
     parser.add_argument("--share", action="store_true")
     parser.add_argument("--device", choices=("cpu", "cuda"), default=None)
@@ -504,7 +548,11 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.share:
+        parser.error("direct --share is disabled; use the guarded launcher and tunnel")
+    _verified_launcher_session()
     evidence = json.loads(args.evidence_registry.read_text(encoding="ascii"))
     validate_registry(evidence)
     roots = _official_roots(args.dataset_index, args.dataset_root)
@@ -530,10 +578,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     demo.launch(
         server_name=args.host,
         server_port=args.port,
-        share=args.share,
+        share=False,
         show_error=False,
         max_threads=1,
         num_workers=1,
+        max_file_size=MAX_UPLOAD_BYTES,
         css_paths=THEME_PATH,
     )
 

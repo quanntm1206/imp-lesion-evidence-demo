@@ -5,10 +5,12 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import subprocess
 
 import pytest
 
 from scripts.paper.audit_clean_v3_paper import audit_paper, main
+import scripts.paper.audit_clean_v3_paper as audit_module
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -164,6 +166,44 @@ def test_audit_allows_declared_dice_delta_in_delta_context(tmp_path: Path) -> No
     assert not any("unsupported numeric result" in error for error in result.errors)
 
 
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "Loop191 IMP-SegFormer-B3 protected-validation robust Dice was 0.9019177076063616.",
+        "Loop192 nnU-Net v2 protected-validation robust Dice was 0.895870479294128.",
+        "ResNet protected-validation robust Dice was 0.895870479294128.",
+        "ResNet50 protected-validation robust Dice was 0.895870479294128.",
+        "Loop191 IMP-SegFormer-B3 clean Dice was 0.895870479294128.",
+        "Loop206 train-screen robust Dice was 0.895870479294128.",
+        "Under protected-validation evidence, robust Dice was 0.8913.",
+        "Under metric contract legacy_nearest_384_t2, robust Dice was 0.8913.",
+    ],
+)
+def test_audit_rejects_cross_identity_or_evidence_number_swaps(
+    tmp_path: Path, claim: str
+) -> None:
+    result = audit_paper(make_minimal_paper(tmp_path, claim), REGISTRY)
+
+    assert any("unsupported numeric result" in error for error in result.errors)
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "Loop191 IMP-SegFormer-B3 protected-validation robust Dice was 0.895870479294128.",
+        "Loop192 nnU-Net v2 protected-validation robust Dice was 0.9019177076063616.",
+        "Loop206 train-screen robust Dice delta was -0.03129624395473221.",
+        "Loop206 train-screen robust Dice 95% CI was [-0.049121296024302145, -0.015627817085354864].",
+    ],
+)
+def test_audit_allows_identity_bound_declared_values(
+    tmp_path: Path, claim: str
+) -> None:
+    result = audit_paper(make_minimal_paper(tmp_path, claim), REGISTRY)
+
+    assert not any("unsupported numeric result" in error for error in result.errors)
+
+
 def test_audit_rejects_registry_source_hash_drift(tmp_path: Path) -> None:
     payload = json.loads(REGISTRY.read_text(encoding="ascii"))
     payload["sources"][0]["sha256"] = "0" * 64
@@ -186,6 +226,44 @@ def test_audit_rejects_manifest_figure_hash_drift(tmp_path: Path) -> None:
 
     assert not result.passed
     assert any("figure hash drift" in error for error in result.errors)
+
+
+def test_audit_requires_committed_paper_pdf_binding(tmp_path: Path) -> None:
+    paper = _copy_paper(tmp_path)
+    manifest_path = paper / "artifact_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="ascii"))
+    manifest.pop("paper_pdf", None)
+    manifest_path.write_text(json.dumps(manifest), encoding="ascii")
+
+    result = audit_paper(paper, REGISTRY)
+
+    assert "missing paper PDF binding" in result.errors
+
+
+def test_audit_rejects_committed_paper_pdf_hash_drift(tmp_path: Path) -> None:
+    paper = _copy_paper(tmp_path)
+    (paper / "main.pdf").write_bytes(b"replaced PDF")
+
+    result = audit_paper(paper, REGISTRY)
+
+    assert "paper PDF hash drift" in result.errors
+
+
+def test_audit_rejects_committed_paper_pdf_page_drift(tmp_path: Path) -> None:
+    paper = _copy_paper(tmp_path)
+    manifest_path = paper / "artifact_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="ascii"))
+    pdf = paper / "main.pdf"
+    manifest["paper_pdf"] = {
+        "path": "main.pdf",
+        "sha256": hashlib.sha256(pdf.read_bytes()).hexdigest(),
+        "pages": 999,
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="ascii")
+
+    result = audit_paper(paper, REGISTRY)
+
+    assert "paper PDF page drift" in result.errors
 
 
 def test_audit_requires_editable_source_hash(tmp_path: Path) -> None:
@@ -307,6 +385,36 @@ def test_audit_rejects_affirmative_clause_after_negated_clause(tmp_path: Path) -
     result = audit_paper(paper, REGISTRY)
 
     assert any("affirmative protected claim" in error for error in result.errors)
+
+
+def test_audit_binds_negation_to_the_matched_claim_predicate(tmp_path: Path) -> None:
+    for index, claim in enumerate((
+        "No test was opened and our model is state of the art.",
+        "No test was opened and we are state of the art.",
+        "No test was opened and our model remains state of the art.",
+    )):
+        case = tmp_path / f"case-{index}"
+        case.mkdir()
+        result = audit_paper(make_minimal_paper(case, claim), REGISTRY)
+
+        assert any("affirmative protected claim" in error for error in result.errors)
+
+
+def test_pdf_page_count_uses_pdfinfo_not_raw_pdf_tokens(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = tmp_path / "main.pdf"
+    pdf.write_bytes(b"%PDF-1.7\n/Type /Page\n/Type /Page\n")
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "Pages:           12\n", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert audit_module._pdf_page_count(pdf) == 12
+    assert calls == [["pdfinfo", str(pdf)]]
 
 
 @pytest.mark.parametrize(

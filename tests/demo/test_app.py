@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
+import warnings
 
 import numpy as np
+from PIL import Image as PILImage
+import pytest
+
+import lesion_robustness.demo.app as app_module
 
 from lesion_robustness.demo.app import (
     CONTROL_LOCKED_HTML,
@@ -220,6 +226,92 @@ def test_app_has_one_worker_queue_and_no_forbidden_claims() -> None:
     assert "clinical grid" not in config.lower()
     assert "state-of-the-art" not in config.lower()
     assert "protected test result" not in config.lower()
+
+
+def test_pillow_rejects_images_above_the_16_megapixel_contract_before_decode(
+    tmp_path: Path,
+) -> None:
+    assert app_module.MAX_UPLOAD_PIXELS == 16_000_000
+    assert PILImage.MAX_IMAGE_PIXELS == app_module.MAX_UPLOAD_PIXELS
+    compressed = tmp_path / "compressed-bomb.png"
+    PILImage.new("1", (4001, 4000), color=0).save(compressed, optimize=True)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", PILImage.DecompressionBombWarning)
+        with pytest.raises(PILImage.DecompressionBombWarning):
+            PILImage.open(compressed)
+
+
+def _guarded_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    root = tmp_path / "repo"
+    session = root / "demo_runtime/sessions/demo-00000000000000000000000000000000"
+    session.mkdir(parents=True)
+    monkeypatch.setattr(app_module, "ROOT", root)
+    for name in ("IMP_LOOP206_DEMO_SESSION", "GRADIO_TEMP_DIR", "TMP", "TEMP"):
+        monkeypatch.setenv(name, str(session))
+    return session
+
+
+def test_application_requires_and_verifies_launcher_owned_temp_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = _guarded_session(tmp_path, monkeypatch)
+
+    assert app_module._verified_launcher_session() == session.resolve()
+    monkeypatch.delenv("IMP_LOOP206_DEMO_SESSION")
+    with pytest.raises(RuntimeError, match="guarded launcher"):
+        app_module._verified_launcher_session()
+
+
+def test_direct_share_fails_before_runtime_loading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden_read(*_args, **_kwargs):
+        raise AssertionError("runtime loading started before direct-share rejection")
+
+    monkeypatch.setattr(Path, "read_text", forbidden_read)
+    with pytest.raises(SystemExit):
+        app_module.main(["--share"])
+
+
+def test_non_loopback_host_fails_before_runtime_loading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden_read(*_args, **_kwargs):
+        raise AssertionError("runtime loading started before host rejection")
+
+    monkeypatch.setattr(Path, "read_text", forbidden_read)
+    with pytest.raises(SystemExit):
+        app_module.main(["--host", "0.0.0.0"])
+
+
+def test_guarded_launch_wires_server_side_upload_byte_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _guarded_session(tmp_path, monkeypatch)
+    captured: dict[str, object] = {}
+
+    class FakeDemo:
+        def launch(self, **kwargs):
+            captured.update(kwargs)
+
+    class FakeLoaded:
+        def build_fixed_provider(self, **kwargs):
+            return object()
+
+        def build_service(self, **kwargs):
+            return object()
+
+    monkeypatch.setattr(app_module, "validate_registry", lambda _value: None)
+    monkeypatch.setattr(app_module, "load_model_registry", lambda *_args, **_kwargs: FakeLoaded())
+    monkeypatch.setattr(app_module, "_official_roots", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(app_module, "_build_runtime_context", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(app_module, "create_app", lambda *_args, **_kwargs: FakeDemo())
+
+    app_module.main([])
+
+    assert captured["share"] is False
+    assert captured["max_file_size"] == app_module.MAX_UPLOAD_BYTES
 
 
 def test_theme_declares_required_tokens_and_mobile_motion_contract() -> None:

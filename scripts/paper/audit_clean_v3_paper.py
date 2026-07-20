@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import re
+import subprocess
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -140,7 +141,20 @@ def _claim_clauses(text: str) -> Iterable[str]:
 
 
 def _claim_is_negated(clause: str, start: int, end: int) -> bool:
-    if _NEGATION.search(clause[:start]):
+    prefix = clause[:start]
+    boundaries: list[re.Match[str]] = []
+    explicit_subject = re.compile(
+        r"^(?:(?:i|we|you|he|she|they|it|this|that|these|those)\b|"
+        r"(?:my|our|your|his|her|their|its|the|a|an)\s+[A-Za-z][\w'-]*\b)",
+        re.IGNORECASE,
+    )
+    for coordination in re.finditer(r"\b(?:and|or)\b", prefix, re.IGNORECASE):
+        right = prefix[coordination.end() :].lstrip()
+        left = prefix[: coordination.start()]
+        if right and (_CLAIM_TERMS.search(left) is None or explicit_subject.match(right)):
+            boundaries.append(coordination)
+    scoped_prefix = prefix[boundaries[-1].start() :] if boundaries else prefix
+    if _NEGATION.search(scoped_prefix):
         return True
     suffix = clause[end:]
     return bool(
@@ -207,7 +221,54 @@ def _check_manifest(
                 errors.append(f"invalid {label} manifest entry")
                 continue
             _check_declared_hashes(paper, entry, label, errors)
+    _check_paper_pdf(paper, manifest, errors)
     return manifest
+
+
+def _pdf_page_count(path: Path) -> int:
+    completed = subprocess.run(
+        ["pdfinfo", str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise ValueError("pdfinfo failed")
+    match = re.search(r"^Pages:\s+(\d+)\s*$", completed.stdout, re.MULTILINE)
+    if match is None or int(match.group(1)) < 1:
+        raise ValueError("pdfinfo returned no valid page count")
+    return int(match.group(1))
+
+
+def _check_paper_pdf(
+    paper: Path, manifest: dict[str, Any], errors: list[str]
+) -> None:
+    entry = manifest.get("paper_pdf")
+    if not isinstance(entry, dict):
+        errors.append("missing paper PDF binding")
+        return
+    relative = entry.get("path")
+    expected_hash = entry.get("sha256")
+    expected_pages = entry.get("pages")
+    if (
+        relative != "main.pdf"
+        or not isinstance(expected_hash, str)
+        or type(expected_pages) is not int
+        or expected_pages < 1
+    ):
+        errors.append("missing paper PDF binding")
+        return
+    pdf = _resolve_contained(paper, relative)
+    if pdf is None or pdf != (paper / "main.pdf").resolve() or not pdf.is_file():
+        errors.append("missing paper PDF binding")
+        return
+    if _sha256(pdf) != expected_hash:
+        errors.append("paper PDF hash drift")
+    try:
+        if _pdf_page_count(pdf) != expected_pages:
+            errors.append("paper PDF page drift")
+    except (OSError, ValueError, subprocess.SubprocessError):
+        errors.append("paper PDF inspection failed")
 
 
 def _resolve_contained(base: Path, value: str) -> Path | None:
@@ -413,20 +474,162 @@ def _claim_evidence(path: Path, clause: str, position: int) -> set[str]:
     return {max(markers)[1]} if markers else {"point"}
 
 
+def _record_loop_ids(record: dict[str, Any]) -> set[str]:
+    values = [
+        str(record.get("model_id", "")),
+        str(record.get("comparison_id", "")),
+        *(str(value) for value in record.get("source_ids", []) if isinstance(value, str)),
+    ]
+    return {
+        match
+        for value in values
+        for match in re.findall(r"\b(?:loop|l)[- _]?(\d{3})\b", value.lower())
+    }
+
+
+def _normalized_phrase(value: object) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", str(value).replace("\\_", "_").lower()))
+
+
+def _identity_patterns(record: dict[str, Any]) -> set[str]:
+    patterns = {
+        rf"\b(?:loop|l)[- _]?{identifier}\b"
+        for identifier in _record_loop_ids(record)
+    }
+    for field in ("display_name", "model_id", "comparison_id"):
+        words = re.findall(r"[a-z0-9]+", str(record.get(field, "")).lower())
+        if words:
+            patterns.add(r"\b" + r"[- _\\]*".join(map(re.escape, words)) + r"\b")
+    display = _normalized_phrase(record.get("display_name", ""))
+    if display.startswith("imp segformer"):
+        patterns.add(r"\\impmodel\b")
+        patterns.add(r"\b(?:preprocessing[- ]aware\s+)?mit[- ]?b3\s+u[- ]?net\s+control\b")
+    return patterns
+
+
+_MODEL_IDENTIFIER = re.compile(
+    r"\b(?:loop|l)[- _]?\d+\b|"
+    r"\b(?=[A-Za-z0-9-]*[A-Z])(?=[A-Za-z0-9-]*\d)[A-Za-z][A-Za-z0-9-]*\b|"
+    r"\b[A-Z]?[a-z]+[A-Z][A-Za-z0-9-]*\b|"
+    r"\b[A-Z]{2,}(?:-[A-Za-z0-9]+)+\b|"
+    r"\b[A-Z][A-Za-z0-9-]+\s+(?:model|system)\b"
+)
+
+
+def _claim_names_model(clause: str) -> bool:
+    without_metrics = _METRIC.sub(" ", clause)
+    return _MODEL_IDENTIFIER.search(without_metrics) is not None
+
+
+def _identity_scoped_records(
+    records: list[dict[str, Any]], clause: str, position: int
+) -> list[dict[str, Any]]:
+    before: list[tuple[int, int]] = []
+    connected_after: list[tuple[int, int]] = []
+    for index, record in enumerate(records):
+        for pattern in _identity_patterns(record):
+            for match in re.finditer(pattern, clause, re.IGNORECASE):
+                if match.end() <= position:
+                    before.append((position - match.end(), index))
+                elif match.start() >= position:
+                    connector = clause[position : match.start()]
+                    if re.fullmatch(
+                        r"[-+0-9.eE]+\s+(?:for|by|from)\s+",
+                        connector,
+                        re.IGNORECASE,
+                    ):
+                        connected_after.append((match.start() - position, index))
+                else:
+                    before.append((0, index))
+    distances = connected_after or before
+    if not distances:
+        return [] if _claim_names_model(clause) else records
+    nearest = min(distance for distance, _ in distances)
+    selected = {index for distance, index in distances if distance == nearest}
+    return [record for index, record in enumerate(records) if index in selected]
+
+
+def _record_matches_claim(record: dict[str, Any], clause: str) -> bool:
+    normalized = _normalized_phrase(clause)
+    for field in ("evidence_class", "partition", "metric_contract"):
+        value = _normalized_phrase(record.get(field, ""))
+        if not value:
+            continue
+        known = record.get(f"_known_{field}", set())
+        mentioned = {item for item in known if item and item in normalized}
+        if mentioned and value not in mentioned:
+            return False
+    return True
+
+
+def _point_fields(metric: str, clause: str) -> tuple[str, ...]:
+    normalized = clause.replace("\\_", "_").lower()
+    if metric == "dice":
+        if re.search(r"\bclean[- ]?dice\b", normalized):
+            return ("clean_dice",)
+        if re.search(r"\brobust[- ]?dice\b", normalized):
+            return ("robust_dice",)
+    return _metric_fields(metric, "point")
+
+
 def _metric_values(
-    registry: dict[str, Any], metric: str | None, evidence: set[str]
+    registry: dict[str, Any],
+    metric: str | None,
+    evidence: set[str],
+    clause: str,
+    position: int,
 ) -> set[float]:
     observations = registry.get("observations")
     comparisons = registry.get("comparisons")
     values: set[float] = set()
     metrics = (metric,) if metric is not None else ("dice", "bf1")
+    records = [value for value in observations or [] if isinstance(value, dict)]
+    known_fields = {
+        field: {_normalized_phrase(record.get(field, "")) for record in records}
+        for field in ("evidence_class", "partition", "metric_contract")
+    }
+    scoped_records: list[dict[str, Any]] = []
+    for record in _identity_scoped_records(records, clause, position):
+        scoped = dict(record)
+        scoped["_all_records"] = records
+        for field, known_values in known_fields.items():
+            scoped[f"_known_{field}"] = known_values
+        if _record_matches_claim(scoped, clause):
+            scoped_records.append(record)
     for current_metric in metrics:
         for kind in evidence:
-            for field in _metric_fields(current_metric, kind):
-                values.update(_numbers_for_field(observations, field))
+            fields = (
+                _point_fields(current_metric, clause)
+                if kind == "point"
+                else _metric_fields(current_metric, kind)
+            )
+            for field in fields:
+                values.update(_numbers_for_field(scoped_records, field))
     if metric == "dice" and isinstance(comparisons, list):
-        for comparison in comparisons:
-            if not isinstance(comparison, dict) or comparison.get("metric") != "robust_dice":
+        comparison_records = [
+            value for value in comparisons if isinstance(value, dict)
+        ]
+        for comparison in _identity_scoped_records(
+            comparison_records, clause, position
+        ):
+            if (
+                not isinstance(comparison, dict)
+                or comparison.get("metric") != "robust_dice"
+                or not _record_matches_claim(
+                    {
+                        **comparison,
+                        "_known_evidence_class": {
+                            _normalized_phrase(item.get("evidence_class", ""))
+                            for item in comparisons
+                            if isinstance(item, dict)
+                        },
+                        "_known_partition": set(),
+                        "_known_metric_contract": set(),
+                        "_all_records": [],
+                    },
+                    clause,
+                )
+            ):
                 continue
             if "delta" in evidence and isinstance(comparison.get("point_delta"), (int, float)):
                 values.add(float(comparison["point_delta"]))
@@ -481,6 +684,8 @@ def _check_result_numbers(
                     registry,
                     _metric_name(clause, match.start()),
                     _claim_evidence(path, clause, match.start()),
+                    clause,
+                    match.start(),
                 )
                 supported = protocol or metric
                 if not _number_is_supported(match.group(), supported):

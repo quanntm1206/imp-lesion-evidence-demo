@@ -28,6 +28,13 @@ jobs:
       - name: Install CPU delivery dependencies
         run: uv sync --locked --python 3.12 --extra dev --extra analysis --extra demo
 
+      - name: Install TeX and PDF inspection toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            latexmk poppler-utils texlive-bibtex-extra texlive-fonts-recommended \
+            texlive-latex-base texlive-latex-extra
+
       - name: Run demo tests
         run: |
           mkdir -p ci-receipts
@@ -51,34 +58,49 @@ jobs:
             --receipt ci-receipts/paper-audit.json \
             --source-verification registry-only
 
-      - name: Build paper when TeX is installed
+      - name: Clean-build paper and write receipt
         shell: bash
         run: |
           set -euo pipefail
           cd paper/clean_v3_loop206
-          paper_built=false
-          latexmk_available=false
-          if command -v latexmk >/dev/null 2>&1; then
-            latexmk_available=true
-            if latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex | tee ../../ci-receipts/latex-build.log; then
-              paper_built=true
-            else
-              printf '%s\n' 'latexmk failed; trying pdflatex/bibtex fallback' | tee -a ../../ci-receipts/latex-build.log
-            fi
-          fi
-          if [[ "$paper_built" == false ]] && command -v pdflatex >/dev/null 2>&1 && command -v bibtex >/dev/null 2>&1; then
-            pdflatex -interaction=nonstopmode -halt-on-error main.tex
-            bibtex main
-            pdflatex -interaction=nonstopmode -halt-on-error main.tex
-            pdflatex -interaction=nonstopmode -halt-on-error main.tex | tee ../../ci-receipts/latex-build.log
-            paper_built=true
-          fi
-          if [[ "$paper_built" == false ]] && [[ "$latexmk_available" == true ]]; then
-            printf '%s\n' 'latexmk failed and pdflatex/bibtex fallback is unavailable.' | tee -a ../../ci-receipts/latex-build.log
-            exit 1
-          elif [[ "$paper_built" == false ]]; then
-            printf '%s\n' 'TeX runner unavailable; paper compilation skipped.' > ../../ci-receipts/latex-build.log
-          fi
+          build_command='latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex'
+          latexmk -C main.tex
+          rm -f main.pdf
+          $build_command | tee ../../ci-receipts/latex-build.log
+          test -s main.pdf
+          mkdir -p ../../ci-receipts/paper
+          cp main.pdf ../../ci-receipts/paper/main.pdf
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+
+          pdf = Path("main.pdf")
+          data = pdf.read_bytes()
+          inspected = subprocess.run(
+              ["pdfinfo", str(pdf)],
+              check=True,
+              capture_output=True,
+              text=True,
+          )
+          pages = re.search(r"^Pages:\s+(\d+)\s*$", inspected.stdout, re.MULTILINE)
+          if pages is None or int(pages.group(1)) < 1:
+              raise RuntimeError("pdfinfo returned no valid page count")
+          receipt = {
+              "schema_version": "imp.ci_paper_build.v1",
+              "workflow_commit_sha": os.environ["GITHUB_SHA"],
+              "built_pdf_sha256": hashlib.sha256(data).hexdigest(),
+              "pages": int(pages.group(1)),
+              "bytes": len(data),
+              "build_command": "latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex",
+              "status": "passed",
+          }
+          output = Path("../../ci-receipts/paper-build.json")
+          output.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="ascii")
+          PY
 
       - name: Upload paper and test receipts
         if: always()
@@ -88,5 +110,5 @@ jobs:
           if-no-files-found: error
           path: |
             ci-receipts/
-            paper/clean_v3_loop206/main.pdf
+            ci-receipts/paper/main.pdf
             paper/clean_v3_loop206/artifact_manifest.json

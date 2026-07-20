@@ -5,7 +5,7 @@ project:
 extends: configs/default.yaml
 
 data:
-  root: /home/admin_mugen/datasets/isic2018-task1
+  root: ${IMP_DATA_ROOT}/isic2018-task1
   images_dir: images
   masks_dir: masks
   image_size: [256, 256]

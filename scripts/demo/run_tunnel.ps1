@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$CloudflaredPath = ''
+    [string]$CloudflaredPath = '',
+    [switch]$CheckOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,6 +21,11 @@ try {
 }
 catch {
     Stop-DemoTunnel 'Local demo is unavailable. Start run_demo.ps1 before opening a tunnel.' 3
+}
+
+if ($CheckOnly) {
+    Write-Output 'Local demo health check passed; tunnel was not started.'
+    exit 0
 }
 
 try {

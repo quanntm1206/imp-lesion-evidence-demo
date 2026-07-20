@@ -39,6 +39,25 @@ def _powershell_literal(value: Path | str) -> str:
     return str(value).replace("'", "''")
 
 
+def _cloudflared_pids() -> set[int]:
+    result = subprocess.run(
+        [
+            _powershell(),
+            "-NoProfile",
+            "-Command",
+            "Get-Process cloudflared -ErrorAction SilentlyContinue | "
+            "Select-Object -ExpandProperty Id",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode in {0, 1}, result.stderr
+    if result.returncode == 1:
+        assert not result.stdout.strip() and not result.stderr.strip()
+    return {int(line) for line in result.stdout.splitlines() if line.strip().isdigit()}
+
+
 def test_run_demo_is_fail_closed_and_uses_the_cuda_overlay_directly() -> None:
     script = _read("scripts/demo/run_demo.ps1")
 
@@ -56,6 +75,7 @@ def test_run_demo_is_fail_closed_and_uses_the_cuda_overlay_directly() -> None:
         "Invoke-DemoLaunch",
         "Assert-OwnedSessionPath",
         "GRADIO_TEMP_DIR",
+        "IMP_LOOP206_DEMO_SESSION",
         "$env:TMP",
         "$env:TEMP",
         "demo_runtime",
@@ -103,6 +123,7 @@ def test_tunnel_checks_health_resolves_application_and_preserves_exit_code() -> 
     assert re.search(r"tunnel\s+--url", script)
     assert "$LASTEXITCODE" in script
     assert "exit $exitCode" in script
+    assert "[switch]$CheckOnly" in script
     assert "Start-Process" not in script
     assert "--token" not in script
     assert "cloudflared.log" not in script
@@ -183,6 +204,7 @@ def test_run_demo_removes_only_owned_session_and_restores_environment(
         "@echo off\n"
         "if \"%1\"==\"-\" echo preflight=passed & exit /b 0\n"
         "> \"%IMP_TEST_OBSERVATION%\" echo GRADIO_TEMP_DIR=%GRADIO_TEMP_DIR%\n"
+        ">> \"%IMP_TEST_OBSERVATION%\" echo IMP_LOOP206_DEMO_SESSION=%IMP_LOOP206_DEMO_SESSION%\n"
         ">> \"%IMP_TEST_OBSERVATION%\" echo TMP=%TMP%\n"
         ">> \"%IMP_TEST_OBSERVATION%\" echo TEMP=%TEMP%\n"
         "> \"%GRADIO_TEMP_DIR%\\owned.tmp\" echo temporary\n"
@@ -228,6 +250,7 @@ def test_run_demo_removes_only_owned_session_and_restores_environment(
         for line in observation.read_text(encoding="ascii").splitlines()
     )
     assert observed["GRADIO_TEMP_DIR"] == observed["TMP"] == observed["TEMP"]
+    assert observed["IMP_LOOP206_DEMO_SESSION"] == observed["GRADIO_TEMP_DIR"]
     session = Path(observed["GRADIO_TEMP_DIR"])
     assert session.parent == runtime / "sessions"
     assert session.name.startswith("demo-")
@@ -353,10 +376,54 @@ def test_cleanup_failure_is_nonzero_and_preserves_existing_app_failure(
     assert "cleanup failed closed" in result.stderr.lower()
 
 
-def test_tunnel_preserves_health_failure_exit_code() -> None:
-    result = _run_script(ROOT / "scripts/demo/run_tunnel.ps1")
+def test_tunnel_preserves_health_failure_exit_code(tmp_path: Path) -> None:
+    script = tmp_path / "run_tunnel.ps1"
+    source = _read("scripts/demo/run_tunnel.ps1").replace(
+        "http://127.0.0.1:7860", "http://127.0.0.1:1"
+    )
+    script.write_text(source, encoding="ascii")
+
+    result = _run_script(script, "-CheckOnly")
 
     assert result.returncode == 3
+
+
+def test_tunnel_check_only_never_invokes_cloudflared_when_health_is_live(
+    tmp_path: Path,
+) -> None:
+    class Healthy(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Healthy)
+    worker = Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        script = tmp_path / "run_tunnel.ps1"
+        source = _read("scripts/demo/run_tunnel.ps1").replace(
+            "http://127.0.0.1:7860", f"http://127.0.0.1:{server.server_port}"
+        )
+        script.write_text(source, encoding="ascii")
+        before = _cloudflared_pids()
+        result = _run_script(
+            script,
+            "-CheckOnly",
+            "-CloudflaredPath",
+            str(tmp_path / "must-not-be-resolved/cloudflared.exe"),
+        )
+        after = _cloudflared_pids()
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=5)
+
+    assert result.returncode == 0, result.stderr
+    assert "tunnel was not started" in result.stdout
+    assert after == before
 
 
 def test_tunnel_preserves_resolver_failure_exit_code(tmp_path: Path) -> None:

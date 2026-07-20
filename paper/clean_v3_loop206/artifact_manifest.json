@@ -2,6 +2,12 @@
   "evidence_registry_path": "demo/data/evidence_registry.json",
   "evidence_registry_sha256": "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32",
   "schema_version": "imp.paper_artifacts.v1",
+  "paper_pdf": {
+    "path": "main.pdf",
+    "sha256": "43b955e05b709db5891d2872728ff100e1f3b9e5974e9a16674a0b6871ca8312",
+    "pages": 12,
+    "bytes": 1466659
+  },
   "figures": {
     "evidence_pipeline": {
       "path": "figures/evidence_pipeline.pdf",

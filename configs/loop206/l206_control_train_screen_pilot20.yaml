@@ -19,7 +19,7 @@ data:
   val_split: train_screen_holdout
   cache:
     enabled: true
-    root: /home/admin_mugen/imp_cache/dataset_resized/loop206_pilot_384
+    root: ${IMP_CACHE_ROOT}/dataset_resized/loop206_pilot_384
 
 model:
   name: segformer_mit

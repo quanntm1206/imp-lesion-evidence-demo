@@ -12,6 +12,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 
 from lesion_robustness.packed_extra_channel import sha256_rgb_array
+from lesion_robustness.demo.immutable_io import ImmutableSnapshot
 
 
 CACHE_SCHEMA = "loop206.leakage_safe_pilot_cache.v2"
@@ -108,10 +109,10 @@ class _ValidatedCache:
         expected_shape: tuple[int, int],
     ) -> None:
         self.manifest_path = Path(manifest_path).expanduser().resolve()
-        actual_manifest_hash = _sha256_file(self.manifest_path)
-        if actual_manifest_hash != expected_manifest_sha256:
+        manifest_snapshot = ImmutableSnapshot.read(self.manifest_path)
+        if manifest_snapshot.sha256 != expected_manifest_sha256:
             raise ValueError(f"Loop206 {role} manifest hash mismatch")
-        payload = json.loads(self.manifest_path.read_text(encoding="ascii"))
+        payload = json.loads(manifest_snapshot.text("ascii"))
         exact = {
             "schema_version": CACHE_SCHEMA,
             "artifact_type": ARTIFACT_TYPE,
@@ -143,13 +144,12 @@ class _ValidatedCache:
             raise ValueError(f"Loop206 {role} cache data path escape") from exc
         expected_size = int(expected_count) * int(expected_shape[0]) * int(expected_shape[1])
         try:
-            with data_path.open("rb") as handle:
-                data_bytes = handle.read()
+            data_snapshot = ImmutableSnapshot.read(data_path)
         except FileNotFoundError as exc:
             raise ValueError(f"Loop206 {role} cache data is missing") from exc
-        if len(data_bytes) != expected_size:
+        if data_snapshot.size != expected_size:
             raise ValueError(f"Loop206 {role} cache data size mismatch")
-        actual_data_hash = hashlib.sha256(data_bytes).hexdigest()
+        actual_data_hash = data_snapshot.sha256
         if data.get("sha256") != expected_data_sha256 or actual_data_hash != expected_data_sha256:
             raise ValueError(f"Loop206 {role} cache data hash mismatch")
 
@@ -186,10 +186,13 @@ class _ValidatedCache:
         self.lookup = lookup
         self.data_path = data_path
         self.data_sha256 = actual_data_hash
-        self.manifest_sha256 = actual_manifest_hash
-        self._data_bytes = data_bytes
-        self.data = np.frombuffer(self._data_bytes, dtype=np.uint8).reshape(
-            int(expected_count), int(expected_shape[0]), int(expected_shape[1])
+        self.manifest_sha256 = manifest_snapshot.sha256
+        self._data_snapshot = data_snapshot
+        self.data = np.memmap(
+            self._data_snapshot.open(),
+            mode="r",
+            dtype=np.uint8,
+            shape=(int(expected_count), int(expected_shape[0]), int(expected_shape[1])),
         )
 
 
@@ -315,10 +318,10 @@ def _validate_live_preprocessing(
 ) -> None:
     import yaml
 
-    path = Path(live_config_path)
-    if _sha256_file(path) != LIVE_CONFIG_SHA256:
+    snapshot = ImmutableSnapshot.read(live_config_path)
+    if snapshot.sha256 != LIVE_CONFIG_SHA256:
         raise ValueError("Loop206 tracked live config hash mismatch")
-    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    payload = yaml.safe_load(snapshot.text("utf-8"))
     if not isinstance(payload, dict) or payload.get("schema_version") != LIVE_CONFIG_SCHEMA:
         raise ValueError("Loop206 tracked live config schema mismatch")
     live = payload.get("preprocessing")
@@ -345,14 +348,15 @@ class ProductionFixedSampleProvider:
     ) -> None:
         if _token is not _PRODUCTION_PROVIDER_TOKEN:
             raise TypeError("production fixed provider requires registry authorization")
-        if _sha256_file(Path(dataset_index)) != DATASET_INDEX_SHA256:
+        dataset_snapshot = ImmutableSnapshot.read(dataset_index)
+        if dataset_snapshot.sha256 != DATASET_INDEX_SHA256:
             raise ValueError("Loop206 dataset index hash mismatch")
         _validate_live_preprocessing(live_config, registry_preprocessing)
         from lesion_robustness.demo.loop206_prior import load_dataset_index
 
         roots = tuple(Path(root).expanduser().resolve() for root in dataset_roots)
         _, holdout_rows, payload = load_dataset_index(
-            dataset_index, dataset_roots=roots
+            dataset_index, dataset_roots=roots, _snapshot=dataset_snapshot
         )
         raw_rows = {
             str(row["group_key"]): row

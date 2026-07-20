@@ -31,7 +31,9 @@ tunnel commands.
 
 ## Local Start And Health
 
-1. Start `lesion-demo` on the loopback interface only.
+1. Start `scripts/demo/run_demo.ps1` on the loopback interface only. Direct
+   `lesion-demo` launch is rejected because it lacks the launcher-owned upload
+   session guard; direct `lesion-demo --share` is always rejected.
 2. Open the local workbench. Confirm the degraded-runtime banner, evidence
    registry hash, pinned model hashes, exact fixed-cache selector, and
    non-clinical warning render.
@@ -45,6 +47,8 @@ tunnel commands.
 ## Upload Handling
 
 - Treat uploads as ephemeral control-only preview inputs.
+- The server rejects uploads above 16 MiB, and Pillow rejects decoded images
+  above 16 megapixels before Gradio image conversion.
 - Clear temporary uploads and generated receipt files after each session and
   after every failed request.
 - Never retain raw uploads, masks, output arrays, or absolute filesystem paths

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
+import hashlib
 import json
 from pathlib import Path
 
@@ -18,6 +19,15 @@ from lesion_robustness.demo.loop206_prior import (
 )
 from lesion_robustness import loop204_protocol
 import lesion_robustness.demo.loop206_prior as prior_module
+
+
+def _validated_candidate_stub(path: Path):
+    data = b""
+    return prior_module.ValidatedCandidateCache(
+        payload={},
+        manifest_sha256=sha256_file(path),
+        data_snapshot=prior_module.ImmutableSnapshot.from_bytes(data),
+    )
 
 
 @pytest.fixture
@@ -44,7 +54,7 @@ def tiny_fit_rows() -> list[PriorFitRow]:
 def test_prior_round_trip_is_deterministic(
     tiny_fit_rows: list[PriorFitRow], tmp_path: Path
 ) -> None:
-    prior = fit_deployment_prior(tiny_fit_rows, n_jobs=1)
+    prior = fit_deployment_prior(tiny_fit_rows, n_jobs=1, parity_passed=True)
     path = tmp_path / "prior.joblib"
     save_prior(prior, path)
     loaded = load_prior(path, expected_sha256=sha256_file(path))
@@ -53,6 +63,88 @@ def test_prior_round_trip_is_deterministic(
     np.testing.assert_array_equal(first, second)
     assert first.dtype == np.uint8
     assert set(np.unique(first)).issubset({0, 255})
+
+
+def test_prior_fit_defaults_to_parity_not_passed(
+    tiny_fit_rows: list[PriorFitRow],
+) -> None:
+    prior = fit_deployment_prior(tiny_fit_rows, n_jobs=1)
+
+    assert prior.parity_passed is False
+
+
+def _replace_after_first_binary_read(
+    monkeypatch: pytest.MonkeyPatch,
+    target: Path,
+    replacement: bytes,
+) -> None:
+    original_open = Path.open
+    replaced = False
+
+    class ReplacingHandle:
+        def __init__(self, handle) -> None:
+            self._handle = handle
+
+        def __enter__(self):
+            self._handle.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            nonlocal replaced
+            result = self._handle.__exit__(exc_type, exc, traceback)
+            if not replaced:
+                replaced = True
+                with original_open(target, "wb") as output:
+                    output.write(replacement)
+            return result
+
+        def __getattr__(self, name):
+            return getattr(self._handle, name)
+
+    def guarded_open(path: Path, *args, **kwargs):
+        mode = str(args[0] if args else kwargs.get("mode", "r"))
+        handle = original_open(path, *args, **kwargs)
+        if Path(path).resolve() == target.resolve() and mode == "rb" and not replaced:
+            return ReplacingHandle(handle)
+        return handle
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+
+
+def _loaded_bytes(source) -> bytes:
+    if hasattr(source, "data"):
+        return bytes(source.data)
+    if hasattr(source, "read"):
+        return source.read()
+    return Path(source).read_bytes()
+
+
+def test_prior_hash_and_joblib_load_use_the_same_captured_bytes(
+    tiny_fit_rows: list[PriorFitRow],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import joblib
+
+    prior = fit_deployment_prior(tiny_fit_rows, n_jobs=1, parity_passed=False)
+    artifact = tmp_path / "prior.joblib"
+    save_prior(prior, artifact)
+    expected_bytes = artifact.read_bytes()
+    expected_hash = hashlib.sha256(expected_bytes).hexdigest()
+    _replace_after_first_binary_read(monkeypatch, artifact, b"replacement-prior")
+    observed: list[bytes] = []
+
+    def fake_load(source, *args, **kwargs):
+        observed.append(_loaded_bytes(source))
+        return prior
+
+    monkeypatch.setattr(joblib, "load", fake_load)
+    monkeypatch.setattr(prior_module, "_validate_loaded_prior", lambda _prior: None)
+
+    loaded = load_prior(artifact, expected_sha256=expected_hash)
+
+    assert loaded is prior
+    assert observed == [expected_bytes]
 
 
 def test_candidate_channel_requires_parity_receipt(
@@ -94,7 +186,7 @@ def test_parity_failure_deletes_artifact_and_records_diagnostics(
     monkeypatch.setattr(
         module,
         "validate_candidate_manifest",
-        lambda *_args, **_kwargs: ({}, candidate),
+        lambda *_args, **_kwargs: _validated_candidate_stub(candidate),
     )
     monkeypatch.setattr(module, "fit_deployment_prior", lambda *_args, **_kwargs: prior)
     monkeypatch.setattr(
@@ -255,6 +347,84 @@ def test_candidate_manifest_rejects_forged_contract(
         )
 
 
+def test_validated_candidate_cache_owns_the_verified_data_snapshot(
+    candidate_manifest: tuple[Path, dict],
+) -> None:
+    path, payload = candidate_manifest
+    expected_manifest = path.read_bytes()
+    data_path = path.parent / payload["data"]["file"]
+    expected_data_hash = sha256_file(data_path)
+
+    validated = prior_module.validate_candidate_manifest(
+        path, expected_base_threshold=0.07500000000000001
+    )
+    data_path.write_bytes(b"replaced-after-validation")
+
+    assert validated.manifest_sha256 == hashlib.sha256(expected_manifest).hexdigest()
+    assert validated.data_snapshot.sha256 == expected_data_hash
+    assert validated.data_snapshot.size == 536 * 384 * 384
+    assert validated.data_snapshot.is_file_backed
+
+
+def test_holdout_parity_uses_validated_cache_snapshot_not_reopened_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    processed = np.arange(2 * 2 * 3, dtype=np.uint8).reshape(2, 2, 3)
+    contour = np.array([[0, 255], [255, 0]], dtype=np.uint8)
+    data_snapshot = prior_module.ImmutableSnapshot.from_bytes(contour.tobytes())
+    manifest_bytes = b'{"validated":true}'
+    validated = prior_module.ValidatedCandidateCache(
+        payload={
+            "shape": [2, 2],
+            "count": 1,
+            "rows": [
+                {
+                    "index": 0,
+                    "fold": 4,
+                    "corruption": "clean",
+                    "group_key": "holdout-group",
+                    "sample_id": "holdout-sample",
+                    "input_rgb_sha256": prior_module.sha256_rgb_array(processed),
+                }
+            ],
+        },
+        manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest(),
+        data_snapshot=data_snapshot,
+    )
+    mutable_data = tmp_path / "contours.uint8.mmap"
+    mutable_data.write_bytes(bytes([99]) * 4)
+    monkeypatch.setattr(
+        prior_module,
+        "validate_candidate_manifest",
+        lambda *_args, **_kwargs: validated,
+    )
+    monkeypatch.setattr(prior_module, "EXPECTED_HOLDOUT_ROWS", 1)
+
+    class FakePrior:
+        selected_threshold = 0.07500000000000001
+
+        def _preprocess(self, image, *, corruption, dataset_index):
+            return processed
+
+        def _contour_preprocessed(self, image):
+            return contour
+
+    holdout = prior_module.PriorHoldoutRow(
+        sample_id="holdout-sample",
+        group_key="holdout-group",
+        image=processed,
+        dataset_index=0,
+    )
+
+    result = prior_module.verify_holdout_parity(
+        FakePrior(), [holdout], tmp_path / "manifest.json"
+    )
+
+    assert result["parity_passed"] is True
+    assert result["candidate_manifest_sha256"] == validated.manifest_sha256
+    assert result["candidate_data_sha256"] == data_snapshot.sha256
+
+
 def _dataset_payload() -> dict:
     rows = []
     for index in range(384):
@@ -360,6 +530,27 @@ def test_deployment_loader_binds_passed_receipt(
     assert loaded.parity_passed is True
 
 
+def test_deployment_receipt_hash_describes_the_loaded_receipt_bytes(
+    tiny_fit_rows: list[PriorFitRow],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prior = fit_deployment_prior(tiny_fit_rows, n_jobs=1, parity_passed=True)
+    artifact = tmp_path / "prior.joblib"
+    save_prior(prior, artifact)
+    receipt = tmp_path / "receipt.json"
+    receipt.write_text(json.dumps(_passed_receipt(prior, artifact)), encoding="ascii")
+    expected_receipt_bytes = receipt.read_bytes()
+    _replace_after_first_binary_read(monkeypatch, receipt, b'{"status":"replaced"}')
+
+    loaded, receipt_sha256 = prior_module.load_deployment_prior_with_receipt_hash(
+        artifact, receipt
+    )
+
+    assert loaded.parity_passed is True
+    assert receipt_sha256 == hashlib.sha256(expected_receipt_bytes).hexdigest()
+
+
 @pytest.mark.parametrize("forgery", ["content", "artifact", "group", "parity"])
 def test_deployment_loader_rejects_forged_receipt(
     tiny_fit_rows: list[PriorFitRow], tmp_path: Path, forgery: str
@@ -401,7 +592,7 @@ def test_receipt_publish_race_rolls_back_own_artifact(
     monkeypatch.setattr(
         prior_module,
         "validate_candidate_manifest",
-        lambda *_args, **_kwargs: ({}, candidate),
+        lambda *_args, **_kwargs: _validated_candidate_stub(candidate),
     )
     monkeypatch.setattr(
         prior_module, "fit_deployment_prior", lambda *_args, **_kwargs: prior

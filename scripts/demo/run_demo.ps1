@@ -236,7 +236,7 @@ function Invoke-DemoLaunch {
     $snapshot = @{}
     foreach ($name in @(
         'PYTHONPATH', 'GRADIO_TEMP_DIR', 'TMP', 'TEMP',
-        'IMP_LOOP206_PRIOR', 'IMP_LOOP206_PRIOR_RECEIPT'
+        'IMP_LOOP206_DEMO_SESSION', 'IMP_LOOP206_PRIOR', 'IMP_LOOP206_PRIOR_RECEIPT'
     )) {
         $item = Get-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
         $snapshot[$name] = @{
@@ -252,6 +252,7 @@ function Invoke-DemoLaunch {
         $env:GRADIO_TEMP_DIR = $sessionPath
         $env:TMP = $sessionPath
         $env:TEMP = $sessionPath
+        $env:IMP_LOOP206_DEMO_SESSION = $sessionPath
         # Arbitrary candidate use stays locked even if the operator shell has stale prior variables.
         Remove-Item Env:IMP_LOOP206_PRIOR -ErrorAction SilentlyContinue
         Remove-Item Env:IMP_LOOP206_PRIOR_RECEIPT -ErrorAction SilentlyContinue

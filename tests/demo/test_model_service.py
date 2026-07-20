@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import fields
 import hashlib
 import inspect
@@ -43,6 +44,53 @@ class FakePrior:
         return np.full((384, 384), 255, dtype=np.uint8)
 
 
+def _replace_after_first_binary_read(
+    monkeypatch: pytest.MonkeyPatch,
+    target: Path,
+    replacement: bytes,
+) -> None:
+    original_open = Path.open
+    replaced = False
+
+    class ReplacingHandle:
+        def __init__(self, handle) -> None:
+            self._handle = handle
+
+        def __enter__(self):
+            self._handle.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            nonlocal replaced
+            result = self._handle.__exit__(exc_type, exc, traceback)
+            if not replaced:
+                replaced = True
+                with original_open(target, "wb") as output:
+                    output.write(replacement)
+            return result
+
+        def __getattr__(self, name):
+            return getattr(self._handle, name)
+
+    def guarded_open(path: Path, *args, **kwargs):
+        mode = str(args[0] if args else kwargs.get("mode", "r"))
+        handle = original_open(path, *args, **kwargs)
+        if Path(path).resolve() == target.resolve() and mode == "rb" and not replaced:
+            return ReplacingHandle(handle)
+        return handle
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+
+
+def _snapshot_bytes(source) -> bytes:
+    if hasattr(source, "open"):
+        with source.open() as handle:
+            return handle.read()
+    if hasattr(source, "read"):
+        return source.read()
+    return Path(source).read_bytes()
+
+
 @pytest.fixture
 def endpoints() -> tuple[FakeModel, FakeModel]:
     return FakeModel("control-s206"), FakeModel("candidate-s206")
@@ -55,7 +103,11 @@ def _authorized_prior(
 
     receipt = tmp_path / "receipt.json"
     receipt.write_text('{"status":"passed"}', encoding="ascii")
-    monkeypatch.setattr(module, "load_deployment_prior", lambda *_args: FakePrior())
+    monkeypatch.setattr(
+        module,
+        "load_deployment_prior_with_receipt_hash",
+        lambda *_args: (FakePrior(), hashlib.sha256(receipt.read_bytes()).hexdigest()),
+    )
     return load_receipt_authorized_prior(tmp_path / "prior.joblib", receipt)
 
 
@@ -206,6 +258,57 @@ def test_service_rejects_checkpoint_hash_mismatch(tmp_path: Path) -> None:
                 "IMP_LOOP206_CANDIDATE_CHECKPOINT": str(candidate),
             },
         )
+
+
+def test_checkpoint_hash_and_torch_load_use_the_same_captured_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import lesion_robustness.demo.model_service as module
+
+    control_bytes = b"verified-control-checkpoint"
+    candidate_bytes = b"verified-candidate-checkpoint"
+    control = tmp_path / "control.pt"
+    candidate = tmp_path / "candidate.pt"
+    control.write_bytes(control_bytes)
+    candidate.write_bytes(candidate_bytes)
+    payload = deepcopy(module.PINNED_REGISTRY)
+    payload["control"]["checkpoint_sha256"] = hashlib.sha256(control_bytes).hexdigest()
+    payload["candidate"]["checkpoint_sha256"] = hashlib.sha256(candidate_bytes).hexdigest()
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps(payload), encoding="ascii")
+    monkeypatch.setattr(module, "PINNED_REGISTRY", payload)
+    _replace_after_first_binary_read(monkeypatch, control, b"replacement-checkpoint")
+    loaded_bytes: dict[str, bytes] = {}
+
+    def fake_load(source, *, model_id, checkpoint_sha256, device, seed):
+        loaded_bytes[model_id] = _snapshot_bytes(source)
+        endpoint = FakeModel(model_id)
+        endpoint.checkpoint_sha256 = checkpoint_sha256
+        role = "control" if model_id == payload["control"]["model_id"] else "candidate"
+        preprocessing = {
+            "extra_channel": {
+                "enabled": True,
+                "type": "loop206_contour_cache",
+                "require_input_sha256": True,
+                "cache_manifest": f"pilot_cache_v2_{'zero_control' if role == 'control' else 'candidate'}/manifest.json",
+            }
+        }
+        return endpoint, preprocessing, {"low_contrast": {"factor": 0.5}}
+
+    monkeypatch.setattr(module, "_load_torch_endpoint", fake_load)
+
+    loaded = module.load_model_registry(
+        registry,
+        environ={
+            "IMP_LOOP206_CONTROL_CHECKPOINT": str(control),
+            "IMP_LOOP206_CANDIDATE_CHECKPOINT": str(candidate),
+        },
+        device="cpu",
+    )
+
+    assert loaded_bytes[payload["control"]["model_id"]] == control_bytes
+    assert loaded_bytes[payload["candidate"]["model_id"]] == candidate_bytes
+    assert loaded.control.checkpoint_sha256 == hashlib.sha256(control_bytes).hexdigest()
 
 
 @pytest.mark.parametrize(

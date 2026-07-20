@@ -26,6 +26,44 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _replace_after_first_binary_read(
+    monkeypatch: pytest.MonkeyPatch,
+    target: Path,
+    replacement: bytes,
+) -> None:
+    original_open = Path.open
+    replaced = False
+
+    class ReplacingHandle:
+        def __init__(self, handle) -> None:
+            self._handle = handle
+
+        def __enter__(self):
+            self._handle.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            nonlocal replaced
+            result = self._handle.__exit__(exc_type, exc, traceback)
+            if not replaced:
+                replaced = True
+                with original_open(target, "wb") as output:
+                    output.write(replacement)
+            return result
+
+        def __getattr__(self, name):
+            return getattr(self._handle, name)
+
+    def guarded_open(path: Path, *args, **kwargs):
+        mode = str(args[0] if args else kwargs.get("mode", "r"))
+        handle = original_open(path, *args, **kwargs)
+        if Path(path).resolve() == target.resolve() and mode == "rb" and not replaced:
+            return ReplacingHandle(handle)
+        return handle
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+
+
 def _write_manifest(
     directory: Path,
     *,
@@ -139,6 +177,39 @@ def test_fixed_cache_rejects_declared_hash_mismatch(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="candidate manifest hash"):
         FixedCachePair(pair.candidate.manifest_path, pair.zero.manifest_path, expectations=bad)
+
+
+def test_manifest_hash_and_parser_use_the_same_captured_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    image = np.arange(4 * 4 * 3, dtype=np.uint8).reshape(4, 4, 3)
+    zero = _write_manifest(
+        tmp_path / "zero",
+        arm="zero_control",
+        image=image,
+        channel=np.zeros((4, 4), dtype=np.uint8),
+    )
+    candidate = _write_manifest(
+        tmp_path / "candidate",
+        arm="candidate",
+        image=image,
+        channel=np.full((4, 4), 255, dtype=np.uint8),
+    )
+    expectations = FixedCacheExpectations(
+        count=1,
+        shape=(4, 4),
+        candidate_manifest_sha256=_sha256(candidate),
+        candidate_data_sha256=_sha256(candidate.parent / "contours.uint8.mmap"),
+        zero_manifest_sha256=_sha256(zero),
+        zero_data_sha256=_sha256(zero.parent / "contours.uint8.mmap"),
+    )
+    _replace_after_first_binary_read(monkeypatch, candidate, b"{}")
+
+    pair = FixedCachePair(candidate, zero, expectations=expectations)
+    record = pair.lookup_fixture(_holdout_row(), corruption="clean", input_rgb=image)
+
+    np.testing.assert_array_equal(record.candidate_channel, 255)
+    assert pair.candidate.manifest_sha256 == expectations.candidate_manifest_sha256
 
 
 @pytest.mark.parametrize(

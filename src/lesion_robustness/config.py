@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
+import os
 from pathlib import Path
 from typing import Any
 
@@ -410,6 +411,16 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     return merged
 
 
+def _expand_environment(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _expand_environment(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_expand_environment(item) for item in value]
+    if isinstance(value, str):
+        return os.path.expandvars(value)
+    return value
+
+
 def _resolve_extends_path(config_path: Path, parent: str | Path) -> Path:
     parent_path = Path(parent)
     if parent_path.is_absolute():
@@ -425,7 +436,7 @@ def _resolve_extends_path(config_path: Path, parent: str | Path) -> Path:
 
 def load_config(path: str | Path) -> dict[str, Any]:
     config_path = Path(path)
-    data = yaml.safe_load(config_path.read_text()) or {}
+    data = _expand_environment(yaml.safe_load(config_path.read_text()) or {})
     parent = data.get("extends")
     if not parent:
         validate_boundary_refinement_config(data)

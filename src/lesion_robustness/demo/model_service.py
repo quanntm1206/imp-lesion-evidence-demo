@@ -21,7 +21,8 @@ from lesion_robustness.demo.fixed_cache import (
     _build_production_provider,
 )
 from lesion_robustness.demo.geometry import overlay_mask, prepare_image, restore_probability
-from lesion_robustness.demo.loop206_prior import load_deployment_prior
+from lesion_robustness.demo.immutable_io import ImmutableSnapshot
+from lesion_robustness.demo.loop206_prior import load_deployment_prior_with_receipt_hash
 from lesion_robustness.preprocessing import preprocess_image_from_config
 
 
@@ -168,8 +169,9 @@ def _sha256_file(path: Path, *, chunk_size: int = 1 << 20) -> str:
 def load_receipt_authorized_prior(
     artifact_path: str | Path, receipt_path: str | Path
 ) -> ReceiptAuthorizedPrior:
-    prior = load_deployment_prior(artifact_path, receipt_path)
-    receipt_hash = _sha256_file(Path(receipt_path))
+    prior, receipt_hash = load_deployment_prior_with_receipt_hash(
+        artifact_path, receipt_path
+    )
     return ReceiptAuthorizedPrior(prior, receipt_hash, _AUTHORIZATION_TOKEN)
 
 
@@ -529,7 +531,7 @@ def _validate_preprocessing_pair(
 
 
 def _load_torch_endpoint(
-    checkpoint_path: Path,
+    checkpoint_snapshot: ImmutableSnapshot,
     *,
     model_id: str,
     checkpoint_sha256: str,
@@ -539,10 +541,10 @@ def _load_torch_endpoint(
     import torch
 
     state = torch.load(
-        checkpoint_path,
+        checkpoint_snapshot.open(),
         map_location="cpu",
         weights_only=True,
-        mmap=True,
+        mmap=False,
     )
     if not isinstance(state, dict) or not isinstance(state.get("model"), Mapping):
         raise ValueError("Loop206 checkpoint state['model'] is missing")
@@ -595,11 +597,10 @@ def load_model_registry(
 ) -> LoadedModelRegistry:
     if int(seed) != DEFAULT_SEED:
         raise ValueError("Loop206 pinned model registry seed mismatch")
-    payload = _validate_pinned_registry(
-        json.loads(Path(registry_path).read_text(encoding="ascii"))
-    )
+    registry_snapshot = ImmutableSnapshot.read(registry_path)
+    payload = _validate_pinned_registry(json.loads(registry_snapshot.text("ascii")))
     environment = os.environ if environ is None else environ
-    resolved: dict[str, tuple[dict[str, Any], Path, str]] = {}
+    resolved: dict[str, tuple[dict[str, Any], ImmutableSnapshot]] = {}
     for role in ("control", "candidate"):
         spec = payload.get(role)
         if not isinstance(spec, dict):
@@ -613,10 +614,10 @@ def load_model_registry(
         checkpoint = Path(checkpoint_value).expanduser().resolve()
         if not checkpoint.is_file():
             raise FileNotFoundError(f"Loop206 {role} checkpoint is unavailable")
-        actual_hash = _sha256_file(checkpoint)
-        if actual_hash != expected_hash:
+        checkpoint_snapshot = ImmutableSnapshot.read(checkpoint)
+        if checkpoint_snapshot.sha256 != expected_hash:
             raise ValueError(f"Loop206 {role} checkpoint hash mismatch")
-        resolved[role] = (spec, checkpoint, actual_hash)
+        resolved[role] = (spec, checkpoint_snapshot)
 
     import torch
 
@@ -624,14 +625,14 @@ def load_model_registry(
     control, control_preprocessing, control_corruptions = _load_torch_endpoint(
         resolved["control"][1],
         model_id=str(resolved["control"][0]["model_id"]),
-        checkpoint_sha256=resolved["control"][2],
+        checkpoint_sha256=resolved["control"][1].sha256,
         device=selected_device,
         seed=seed,
     )
     candidate, candidate_preprocessing, candidate_corruptions = _load_torch_endpoint(
         resolved["candidate"][1],
         model_id=str(resolved["candidate"][0]["model_id"]),
-        checkpoint_sha256=resolved["candidate"][2],
+        checkpoint_sha256=resolved["candidate"][1].sha256,
         device=selected_device,
         seed=seed,
     )

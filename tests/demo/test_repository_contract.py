@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import subprocess
 import tomllib
 
@@ -38,3 +39,26 @@ def test_compact_demo_evidence_is_not_ignored() -> None:
         check=False,
     )
     assert result.returncode == 1
+
+
+def test_tracked_runtime_files_have_no_machine_specific_absolute_paths() -> None:
+    tracked = subprocess.check_output(
+        ["git", "ls-files", "-z"], cwd=ROOT
+    ).decode("utf-8").split("\0")
+    excluded = ("tests/", "docs/superpowers/plans/", "docs/superpowers/specs/")
+    pattern = re.compile(
+        r"(?<![A-Za-z0-9])(?:[A-Za-z]:[\\/]|/home/[^/\s]+(?:[/\\]|$)|/mnt/[A-Za-z](?:[/\\]|$))"
+    )
+    violations: list[str] = []
+    for relative in tracked:
+        if not relative or relative.startswith(excluded):
+            continue
+        try:
+            text = (ROOT / relative).read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if pattern.search(line):
+                violations.append(f"{relative}:{line_number}")
+
+    assert violations == []
