@@ -1,6 +1,9 @@
 from pathlib import Path
 import re
+import shutil
+import subprocess
 
+import pytest
 import yaml
 
 
@@ -136,3 +139,42 @@ def test_delivery_files_avoid_machine_local_paths() -> None:
         text = _read(relative)
         assert not re.search(r"(?<![A-Za-z])[A-Za-z]:[\\/]", text), relative
         assert not re.search(r"/(?:mnt|home|Users)/", text), relative
+
+
+def test_laptop_handoff_uses_external_venv_and_propagates_native_failures() -> None:
+    runbook = _read("docs/runbooks/two-machine-delivery.md")
+    bootstrap_section = runbook.split("## Windows Bootstrap", 1)[1].split(
+        "## Private GitHub Provisioning", 1
+    )[0]
+    handoff = runbook.split("## Laptop Handoff", 1)[1].split(
+        "## Artifact Transfer", 1
+    )[0]
+    guard = "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
+
+    assert "$laptopVenv = Join-Path $env:LOCALAPPDATA" in bootstrap_section
+    assert "-Venv $laptopVenv" in bootstrap_section
+    assert ".venvs/imp-paper" not in bootstrap_section
+    for invocation in (
+        r"gh repo view [^;]+",
+        r"git clone [^;]+",
+        r"powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows\.ps1",
+        r"git status --short",
+    ):
+        assert re.search(rf"{invocation}; {re.escape(guard)}", handoff)
+
+    shell = shutil.which("powershell") or shutil.which("pwsh")
+    if shell is None:
+        pytest.skip("PowerShell unavailable; static handoff guards verified")
+    simulation = subprocess.run(
+        [
+            shell,
+            "-NoProfile",
+            "-Command",
+            f"$global:LASTEXITCODE = 37; {guard}; Write-Output 'masked'",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert simulation.returncode == 37
+    assert "masked" not in simulation.stdout

@@ -20,7 +20,8 @@ powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1
 Different environment directory:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1 -Venv .venvs/imp-paper
+$laptopVenv = Join-Path $env:LOCALAPPDATA 'IMP/venvs/paper-review'
+powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1 -Venv $laptopVenv
 ```
 
 Optional RTX 4060 smoke environment:
@@ -77,7 +78,7 @@ git push origin rescue/paper-demo:demo-runtime
 Physical laptop execution remains unverified until the operator runs it. One-command CPU handoff from PowerShell:
 
 ```powershell
-$repo = gh repo view quanntm1206/imp-lesion-evidence-demo --json isPrivate,sshUrl | ConvertFrom-Json; if ($repo.isPrivate -ne $true) { throw 'Repository privacy is not verified' }; $target = Join-Path (Get-Location) 'imp-lesion-evidence-demo'; git clone --branch paper-review $repo.sshUrl $target; Set-Location $target; powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1; git status --short
+$ErrorActionPreference = 'Stop'; $repoJson = gh repo view quanntm1206/imp-lesion-evidence-demo --json isPrivate,sshUrl; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $repo = $repoJson | ConvertFrom-Json; if ($repo.isPrivate -ne $true) { throw 'Repository privacy is not verified' }; $target = Join-Path (Get-Location) 'imp-lesion-evidence-demo'; git clone --branch paper-review $repo.sshUrl $target; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Set-Location $target; powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; git status --short; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ```
 
 Expected operator receipt: bootstrap exits zero; portable demo tests pass with only named external-runtime integration skips; paper audit reports `passed=true errors=0 source_verification=registry-only` plus missing-source warnings; the PDF builds; `git status --short` emits nothing. Record the command exit status and commit SHA. Do not report physical-laptop verification before that receipt exists.
