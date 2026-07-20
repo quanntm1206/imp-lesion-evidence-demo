@@ -1,0 +1,23 @@
+{
+  "evidence_registry_path": "demo/data/evidence_registry.json",
+  "evidence_registry_sha256": "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32",
+  "schema_version": "imp.paper_artifacts.v1",
+  "tables": {
+    "clean_v3_validation": {
+      "path": "tables/clean_v3_validation.tex",
+      "sha256": "f14142d369fe8c7ad4ba141b7fdcf75a4b90e921f4851faa925bb30c9d1dd88f"
+    },
+    "evidence_scope": {
+      "path": "tables/evidence_scope.tex",
+      "sha256": "427dd5ab2e6f48888c207fc61f7881b21f2f36e447b0416eac02259a16c18e17"
+    },
+    "legacy_loop170": {
+      "path": "tables/legacy_loop170.tex",
+      "sha256": "09184f539b661c5968095eb69c2f3c95321eaabb2f57ec34750d3b5afb772702"
+    },
+    "loop206_ablation": {
+      "path": "tables/loop206_ablation.tex",
+      "sha256": "7fa3cbe3b40812b21de7d9ad545aa6a9da42fc2e3f0901cc83b1b68ba36f630e"
+    }
+  }
+}

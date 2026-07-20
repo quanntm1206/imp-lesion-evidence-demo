@@ -1,0 +1,15 @@
+
+\begin{table*}[t]
+\centering
+\caption{Evidence hierarchy used throughout this report.}
+\label{tab:evidence-scope}
+\begin{tabular}{llll}
+\toprule
+Evidence class & Dataset/partition & Allowed use & Prohibited claim \\
+\midrule
+\texttt{protected\_validation} & Clean-v3 validation & bounded model comparison & protected-test superiority \\
+\texttt{train\_screen} & Clean-v3 train-screen & controlled hypothesis rejection & generalization \\
+\texttt{legacy\_patient\_contaminated} & Clean-v2 test-v2 & historical context & scientific ranking \\
+\bottomrule
+\end{tabular}
+\end{table*}

@@ -1,0 +1,16 @@
+
+\begin{table*}[t]
+\centering
+\caption{Legacy Clean-v2 test-v2 values. Evidence class: \texttt{legacy\_patient\_contaminated}. Three patient IDs and 13 rows participate in cross-split contamination; these values are historical only.}
+\label{tab:legacy-loop170}
+\begin{tabular}{lrrrr}
+\toprule
+Model & Robust Dice & Clean Dice & Robust IoU & BF1 \\
+\midrule
+EGE-UNet & 0.8616 & 0.8617 & 0.7809 & 0.0817 \\
+IMP-SegFormer-B3 & 0.8913 & 0.8962 & 0.8224 & 0.4240 \\
+Vanilla SegFormer-B3 & 0.8897 & 0.8968 & 0.8179 & 0.3969 \\
+nnU-Net v2 & 0.8911 & 0.8923 & 0.8246 & 0.5381 \\
+\bottomrule
+\end{tabular}
+\end{table*}
