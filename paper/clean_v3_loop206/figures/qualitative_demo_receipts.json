@@ -1,4 +1,15 @@
 {
+  "display_authorization": {
+    "authorized_sample_count": 3,
+    "dataset_license": "legacy_isic_challenge_terms",
+    "hash_binding": "sha256_raw+sha256_rgb",
+    "identity_field": "isic_image_id",
+    "image_license": "CC-0",
+    "mask_variant": "challenge_ground_truth",
+    "provenance_manifest_sha256": "4e86d251231bc105167910c6b5a41fc29900dff41342405657a5c2eccb67b102",
+    "schema_version": "loop206.qualitative_display_authorization.v1"
+  },
+  "evidence_registry_sha256": "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32",
   "panel_caption": "illustrative; not protected-test evidence",
   "receipts": [
     {
@@ -9,6 +20,16 @@
         "zero_manifest": "b92bd22e5425354b46bc019f3ab6d3daddc24568670717be2654c8938894c0da"
       },
       "device": "cuda",
+      "display_authorization": {
+        "authorized_sample_count": 3,
+        "dataset_license": "legacy_isic_challenge_terms",
+        "hash_binding": "sha256_raw+sha256_rgb",
+        "identity_field": "isic_image_id",
+        "image_license": "CC-0",
+        "mask_variant": "challenge_ground_truth",
+        "provenance_manifest_sha256": "4e86d251231bc105167910c6b5a41fc29900dff41342405657a5c2eccb67b102",
+        "schema_version": "loop206.qualitative_display_authorization.v1"
+      },
       "evidence_badge": [
         "train_screen",
         "exact_fixed_cache",
@@ -17,9 +38,9 @@
       "evidence_registry_sha256": "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32",
       "historical_cache_provenance_drift": true,
       "latency_ms": {
-        "candidate": 15.538800002104836,
-        "control": 273.0484999992768,
-        "total": 288.68019999936223
+        "candidate": 15.424599998368649,
+        "control": 268.2937999998103,
+        "total": 283.79360000326415
       },
       "metrics": {
         "candidate": {
@@ -63,6 +84,16 @@
         "zero_manifest": "b92bd22e5425354b46bc019f3ab6d3daddc24568670717be2654c8938894c0da"
       },
       "device": "cuda",
+      "display_authorization": {
+        "authorized_sample_count": 3,
+        "dataset_license": "legacy_isic_challenge_terms",
+        "hash_binding": "sha256_raw+sha256_rgb",
+        "identity_field": "isic_image_id",
+        "image_license": "CC-0",
+        "mask_variant": "challenge_ground_truth",
+        "provenance_manifest_sha256": "4e86d251231bc105167910c6b5a41fc29900dff41342405657a5c2eccb67b102",
+        "schema_version": "loop206.qualitative_display_authorization.v1"
+      },
       "evidence_badge": [
         "train_screen",
         "exact_fixed_cache",
@@ -71,9 +102,9 @@
       "evidence_registry_sha256": "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32",
       "historical_cache_provenance_drift": true,
       "latency_ms": {
-        "candidate": 17.230800000106683,
-        "control": 16.80299999861745,
-        "total": 34.173600000940496
+        "candidate": 16.02890000140178,
+        "control": 16.758400000981055,
+        "total": 32.91739999986021
       },
       "metrics": {
         "candidate": {
@@ -117,6 +148,16 @@
         "zero_manifest": "b92bd22e5425354b46bc019f3ab6d3daddc24568670717be2654c8938894c0da"
       },
       "device": "cuda",
+      "display_authorization": {
+        "authorized_sample_count": 3,
+        "dataset_license": "legacy_isic_challenge_terms",
+        "hash_binding": "sha256_raw+sha256_rgb",
+        "identity_field": "isic_image_id",
+        "image_license": "CC-0",
+        "mask_variant": "challenge_ground_truth",
+        "provenance_manifest_sha256": "4e86d251231bc105167910c6b5a41fc29900dff41342405657a5c2eccb67b102",
+        "schema_version": "loop206.qualitative_display_authorization.v1"
+      },
       "evidence_badge": [
         "train_screen",
         "exact_fixed_cache",
@@ -125,9 +166,9 @@
       "evidence_registry_sha256": "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32",
       "historical_cache_provenance_drift": true,
       "latency_ms": {
-        "candidate": 16.43770000009681,
-        "control": 25.586900002963375,
-        "total": 42.07749999841326
+        "candidate": 16.751399998611305,
+        "control": 17.793499999243068,
+        "total": 34.672699999646284
       },
       "metrics": {
         "candidate": {
@@ -164,6 +205,7 @@
       "schema_version": "loop206.demo.receipt.v1"
     }
   ],
+  "runtime_bundle_sha256": "536d5e42d1cbab4c951b23573b543248927ac14c9d07c1adac0f444133c820b0",
   "schema_version": "loop206.qualitative_receipts.v1",
   "selection_rule": "first, middle, last after sorting all 76 train-screen rows by sample_id and group_key"
 }

@@ -31,11 +31,11 @@
         <mxCell id="9" value="Shared Clean-v3&#xa;validation protocol" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e7edf2;strokeColor=#607d94;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#1d211e;" vertex="1" parent="8">
           <mxGeometry x="20" y="120" width="130" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="10" value="IMP MiT-B3 U-Net" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e5eef5;strokeColor=#527b9e;strokeWidth=1.1;fontFamily=Helvetica;fontSize=12;fontColor=#1d211e;" vertex="1" parent="8">
-          <mxGeometry x="190" y="70" width="140" height="55" as="geometry" />
+        <mxCell id="10" value="Loop191 IMP-SegFormer-B3 (MiT-B3 U-Net implementation)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e5eef5;strokeColor=#527b9e;strokeWidth=1.1;fontFamily=Helvetica;fontSize=10;fontColor=#1d211e;" vertex="1" parent="8">
+          <mxGeometry x="180" y="60" width="170" height="75" as="geometry" />
         </mxCell>
         <mxCell id="11" value="nnU-Net v2" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e5eef5;strokeColor=#527b9e;strokeWidth=1.1;fontFamily=Helvetica;fontSize=12;fontColor=#1d211e;" vertex="1" parent="8">
-          <mxGeometry x="190" y="195" width="140" height="55" as="geometry" />
+          <mxGeometry x="180" y="195" width="170" height="55" as="geometry" />
         </mxCell>
         <mxCell id="12" value="Descriptive point&#xa;estimates" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fff1d9;strokeColor=#b27a21;strokeWidth=1.1;fontFamily=Helvetica;fontSize=12;fontColor=#1d211e;" vertex="1" parent="8">
           <mxGeometry x="370" y="120" width="110" height="70" as="geometry" />

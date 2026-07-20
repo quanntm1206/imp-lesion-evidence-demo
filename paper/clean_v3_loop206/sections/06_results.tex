@@ -25,12 +25,12 @@ The candidate fails the primary-improvement, Dice non-inferiority, boundary non-
 
 \subsection{Fixed-cache qualitative demonstration}
 
-Figure~\ref{fig:qualitative-demo} shows three clean, non-protected examples selected without prediction or metric inspection: the first, middle, and last rows after sorting all 76 train-screen rows by sample identifier and group key. Each comparison was produced by the real GPU service and has a path-free receipt with the exact evidence class \texttt{train\_screen / exact\_fixed\_cache / historical\_cache\_provenance\_drift}. Ground truth appears only because these masks are provider-bound train-screen annotations. The panels illustrate mask geometry and disagreement; they do not estimate generalization or authorize arbitrary-upload candidate inference.
+Figure~\ref{fig:qualitative-demo} shows three clean, non-protected examples selected without prediction or metric inspection: the first, middle, and last rows after sorting all 76 train-screen rows by sample identifier and group key. Each comparison was produced by the real GPU service and has a path-free receipt with the exact evidence class \texttt{train\_screen / exact\_fixed\_cache / historical\_cache\_provenance\_drift}. Ground truth appears only after the source identity, raw and decoded hashes, CC-0 image license, and challenge ground-truth status match the pinned provenance manifest. The panels illustrate mask geometry and disagreement; they do not estimate generalization or authorize arbitrary-upload candidate inference.
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{figures/qualitative_demo.pdf}
-\caption{Three deterministic, non-protected fixed-cache comparisons. Columns show the original image, control mask, candidate mask, disagreement overlay, and authorized train-screen ground truth. Rust marks control-only pixels and teal marks candidate-only pixels. Every row is \texttt{illustrative; not protected-test evidence}.}
+\caption{Three deterministic, non-protected fixed-cache comparisons. Columns show the original image, control mask, candidate mask, disagreement overlay, and authorized train-screen ground truth. Rust marks control-only pixels and teal marks candidate-only pixels. Each of the 15 modality subplots visibly carries the exact notice \texttt{illustrative; not protected-test evidence}.}
 \label{fig:qualitative-demo}
 \end{figure*}
 

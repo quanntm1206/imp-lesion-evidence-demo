@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 from pathlib import Path
-from typing import Sequence
+from typing import NamedTuple, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+from lesion_robustness.evidence_registry import validate_registry
 
 
 PANEL_CAPTION = "illustrative; not protected-test evidence"
@@ -17,6 +21,9 @@ EVIDENCE_BADGE = [
     "exact_fixed_cache",
     "historical_cache_provenance_drift",
 ]
+PROVENANCE_MANIFEST_SHA256 = (
+    "4e86d251231bc105167910c6b5a41fc29900dff41342405657a5c2eccb67b102"
+)
 PDF_METADATA = {
     "Title": "Evidence-bounded Loop206 figures",
     "Author": "IMP Project",
@@ -27,9 +34,22 @@ PDF_METADATA = {
 }
 
 
+class MetricDelta(NamedTuple):
+    point_delta: float
+    ci95: tuple[float, float]
+
+
+class Loop206DeltaEvidence(NamedTuple):
+    registry_sha256: str
+    dice: MetricDelta
+    boundary_f1: MetricDelta
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--evidence-registry", type=Path, required=True)
     parser.add_argument("--receipt-bundle", type=Path, required=True)
+    parser.add_argument("--expected-receipt-bundle-sha256", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     return parser
 
@@ -47,11 +67,95 @@ def _style() -> None:
     )
 
 
-def _build_delta(output: Path) -> None:
+def _finite(value: object, field: str) -> float:
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{field} must be finite")
+    return result
+
+
+def _ci95(value: object, field: str) -> tuple[float, float]:
+    if not isinstance(value, list) or len(value) != 2:
+        raise ValueError(f"{field} must contain two bounds")
+    lower = _finite(value[0], f"{field}.lower")
+    upper = _finite(value[1], f"{field}.upper")
+    if lower > upper:
+        raise ValueError(f"{field} bounds are reversed")
+    return lower, upper
+
+
+def _exact_row(rows: object, *, field: str, value: str, label: str) -> dict:
+    if not isinstance(rows, list):
+        raise ValueError(f"evidence registry {label} rows are missing")
+    matches = [row for row in rows if isinstance(row, dict) and row.get(field) == value]
+    if len(matches) != 1:
+        raise ValueError(f"Loop206 {label} is missing or duplicated")
+    return matches[0]
+
+
+def load_loop206_delta_evidence(path: str | Path) -> Loop206DeltaEvidence:
+    payload = json.loads(Path(path).read_text(encoding="ascii"))
+    if not isinstance(payload, dict):
+        raise ValueError("evidence registry must contain one JSON object")
+    validate_registry(payload)
+    observation = _exact_row(
+        payload.get("observations"),
+        field="model_id",
+        value="L206-contour-vs-control",
+        label="observation",
+    )
+    comparison = _exact_row(
+        payload.get("comparisons"),
+        field="comparison_id",
+        value="L206-contour-minus-control",
+        label="comparison",
+    )
+    expected_observation = {
+        "display_name": "Loop206 contour channel minus zero-channel control",
+        "partition": "train_screen",
+        "evidence_class": "train_screen",
+        "metric_contract": "loop206_train_screen_three_corruptions_t2",
+        "seed_count": 3,
+        "group_count": 76,
+        "corruption_count": 3,
+        "bootstrap_resamples": 10000,
+        "source_ids": ["loop206_report"],
+    }
+    if any(observation.get(key) != value for key, value in expected_observation.items()):
+        raise ValueError("Loop206 observation semantic contract mismatch")
+    if (
+        comparison.get("evidence_class") != "train_screen"
+        or comparison.get("metric") != "robust_dice"
+        or comparison.get("source_ids") != ["loop206_report"]
+    ):
+        raise ValueError("Loop206 comparison semantic contract mismatch")
+
+    dice = MetricDelta(
+        _finite(observation.get("robust_dice_delta"), "robust_dice_delta"),
+        _ci95(observation.get("robust_dice_ci95"), "robust_dice_ci95"),
+    )
+    boundary_f1 = MetricDelta(
+        _finite(observation.get("robust_bf1_delta"), "robust_bf1_delta"),
+        _ci95(observation.get("robust_bf1_ci95"), "robust_bf1_ci95"),
+    )
+    comparison_delta = _finite(comparison.get("point_delta"), "comparison.point_delta")
+    comparison_ci = _ci95(comparison.get("ci95"), "comparison.ci95")
+    if comparison_delta != dice.point_delta or comparison_ci != dice.ci95:
+        raise ValueError("Loop206 comparison does not match its observation")
+    return Loop206DeltaEvidence(
+        registry_sha256=str(payload["registry_sha256"]),
+        dice=dice,
+        boundary_f1=boundary_f1,
+    )
+
+
+def _build_delta(evidence: Loop206DeltaEvidence, output: Path) -> None:
     metrics = ["Robust Dice", "Boundary F1"]
-    points = np.asarray([-0.0313, -0.0147])
-    lower = np.asarray([-0.0491, -0.0308])
-    upper = np.asarray([-0.0156, 0.0010])
+    points = np.asarray(
+        [evidence.dice.point_delta, evidence.boundary_f1.point_delta]
+    )
+    lower = np.asarray([evidence.dice.ci95[0], evidence.boundary_f1.ci95[0]])
+    upper = np.asarray([evidence.dice.ci95[1], evidence.boundary_f1.ci95[1]])
     positions = np.asarray([1, 0])
 
     figure, axis = plt.subplots(figsize=(6.8, 2.35), constrained_layout=True)
@@ -106,13 +210,16 @@ def _disagreement_overlay(
     return np.clip(overlay, 0, 255).astype(np.uint8)
 
 
-def _load_bundle(path: Path) -> tuple[dict[str, np.ndarray], list[dict]]:
+def _load_bundle(
+    path: Path, *, expected_registry_sha256: str
+) -> tuple[dict[str, np.ndarray], list[dict], dict]:
     with np.load(path, allow_pickle=False) as bundle:
         arrays = {
             key: np.asarray(bundle[key])
             for key in ("original", "control", "candidate", "ground_truth")
         }
         receipts = [json.loads(str(value)) for value in bundle["receipt_json"]]
+        display_authorization = json.loads(str(bundle["display_authorization_json"]))
     if any(value.shape[0] != 3 for value in arrays.values()) or len(receipts) != 3:
         raise ValueError("qualitative bundle must contain exactly three examples")
     sample_ids: set[str] = set()
@@ -124,19 +231,31 @@ def _load_bundle(path: Path) -> tuple[dict[str, np.ndarray], list[dict]]:
             or receipt.get("device") != "cuda"
             or receipt.get("historical_cache_provenance_drift") is not True
             or receipt.get("sample", {}).get("corruption") != "clean"
+            or receipt.get("display_authorization") != display_authorization
+            or receipt.get("evidence_registry_sha256") != expected_registry_sha256
         ):
             raise ValueError("qualitative receipt violates the evidence contract")
         sample_ids.add(str(receipt["sample"]["sample_id"]))
     if len(sample_ids) != 3:
         raise ValueError("qualitative examples must be unique")
-    return arrays, receipts
+    if (
+        display_authorization.get("schema_version")
+        != "loop206.qualitative_display_authorization.v1"
+        or display_authorization.get("image_license") != "CC-0"
+        or display_authorization.get("mask_variant") != "challenge_ground_truth"
+        or display_authorization.get("provenance_manifest_sha256")
+        != PROVENANCE_MANIFEST_SHA256
+        or display_authorization.get("authorized_sample_count") != 3
+    ):
+        raise ValueError("qualitative display authorization is invalid")
+    return arrays, receipts, display_authorization
 
 
 def _build_qualitative(
     arrays: dict[str, np.ndarray], receipts: list[dict], output: Path
 ) -> None:
-    figure, axes = plt.subplots(3, 5, figsize=(11.8, 7.35), constrained_layout=False)
-    figure.subplots_adjust(left=0.025, right=0.995, top=0.875, bottom=0.045, wspace=0.035, hspace=0.28)
+    figure, axes = plt.subplots(3, 5, figsize=(11.8, 8.1), constrained_layout=False)
+    figure.subplots_adjust(left=0.025, right=0.995, top=0.875, bottom=0.055, wspace=0.035, hspace=0.43)
     titles = [
         "Original",
         "Control mask",
@@ -191,16 +310,7 @@ def _build_qualitative(
             color="white",
             bbox={"facecolor": "#1d211e", "edgecolor": "none", "pad": 2.2, "alpha": 0.88},
         )
-        axes[row, 2].text(
-            0.5,
-            -0.065,
-            PANEL_CAPTION,
-            transform=axes[row, 2].transAxes,
-            va="top",
-            ha="center",
-            fontsize=7.2,
-            color="#4b5563",
-        )
+    caption_all_modality_panels(axes)
     figure.text(
         0.995,
         0.012,
@@ -214,12 +324,39 @@ def _build_qualitative(
     plt.close(figure)
 
 
+def caption_all_modality_panels(axes: np.ndarray) -> int:
+    count = 0
+    for axis in axes.flat:
+        axis.text(
+            0.5,
+            -0.055,
+            PANEL_CAPTION,
+            transform=axis.transAxes,
+            va="top",
+            ha="center",
+            fontsize=7.0,
+            fontstretch="condensed",
+            color="#4b5563",
+        )
+        count += 1
+    if count != 15:
+        raise ValueError("qualitative layout must contain exactly 15 modality panels")
+    return count
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     args = _parser().parse_args(argv)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     _style()
-    arrays, receipts = _load_bundle(args.receipt_bundle)
-    _build_delta(args.output_dir / "loop206_delta.pdf")
+    evidence = load_loop206_delta_evidence(args.evidence_registry)
+    bundle_sha256 = hashlib.sha256(args.receipt_bundle.read_bytes()).hexdigest()
+    if bundle_sha256 != args.expected_receipt_bundle_sha256:
+        raise ValueError("qualitative receipt bundle SHA-256 mismatch")
+    arrays, receipts, display_authorization = _load_bundle(
+        args.receipt_bundle,
+        expected_registry_sha256=evidence.registry_sha256,
+    )
+    _build_delta(evidence, args.output_dir / "loop206_delta.pdf")
     _build_qualitative(arrays, receipts, args.output_dir / "qualitative_demo.pdf")
     (args.output_dir / "qualitative_demo_receipts.json").write_text(
         json.dumps(
@@ -227,6 +364,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                 "schema_version": "loop206.qualitative_receipts.v1",
                 "selection_rule": "first, middle, last after sorting all 76 train-screen rows by sample_id and group_key",
                 "panel_caption": PANEL_CAPTION,
+                "evidence_registry_sha256": evidence.registry_sha256,
+                "runtime_bundle_sha256": bundle_sha256,
+                "display_authorization": display_authorization,
                 "receipts": receipts,
             },
             indent=2,
