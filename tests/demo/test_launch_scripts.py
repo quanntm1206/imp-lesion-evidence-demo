@@ -303,6 +303,16 @@ def test_recovery_container_contract_is_exact_and_readonly() -> None:
     assert "mount -t ext4 -o ro,noload" in script
 
 
+def test_recovery_checks_installed_7zip_without_repository_indexes() -> None:
+    script = _read("scripts/demo/recover_nnunet_artifacts.ps1")
+
+    assert (
+        "apk info -v --installed 7zip | grep -Fx '7zip-24.09-r0'"
+        in script
+    )
+    assert "apk info -v 7zip |" not in script
+
+
 def test_recovery_container_arguments_lock_mounts_and_image() -> None:
     result = _run_recovery_function_harness(
         ("New-ContainerRecoveryArguments",),
