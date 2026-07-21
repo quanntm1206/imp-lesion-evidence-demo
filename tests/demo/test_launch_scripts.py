@@ -250,59 +250,155 @@ def test_recovery_script_is_read_only_and_forbids_distro_mutation() -> None:
         assert forbidden not in script
 
 
-def test_recovery_script_requires_admin_before_input_access(tmp_path: Path) -> None:
-    admin_check = subprocess.run(
-        [
-            _powershell(),
-            "-NoProfile",
-            "-Command",
-            "if (([Security.Principal.WindowsPrincipal] "
-            "[Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole("
-            "[Security.Principal.WindowsBuiltInRole]::Administrator)) { exit 0 } "
-            "else { exit 1 }",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if admin_check.returncode == 0:
-        pytest.skip("non-administrator token required for this safety test")
+def test_recovery_container_backend_precedes_administrator_attach() -> None:
+    script = _read("scripts/demo/recover_nnunet_artifacts.ps1")
+    workflow = script[script.index("function Invoke-AutomaticRecovery") :]
 
-    output_root = tmp_path / "must-not-be-created"
-    result = _run_script(
-        ROOT / "scripts/demo/recover_nnunet_artifacts.ps1",
-        "-VhdPath",
-        str(tmp_path / "missing.vhdx"),
-        "-ReportPath",
-        str(tmp_path / "missing-report.json"),
-        "-OutputRoot",
-        str(output_root),
+    assert workflow.index("Get-ContainerRecoveryContext") < workflow.index(
+        "Assert-Administrator"
+    )
+    assert workflow.index("Invoke-ContainerRecovery") < workflow.index(
+        "Assert-Administrator"
     )
 
-    assert result.returncode != 0
-    assert "Administrator token required" in result.stdout + result.stderr
-    assert not output_root.exists()
 
-
-def test_recovery_script_uses_only_the_exact_vhd_environment_metadata() -> None:
+def test_recovery_marks_original_environment_unavailable() -> None:
     script = _read("scripts/demo/recover_nnunet_artifacts.ps1")
 
-    assert "$linuxMount/.venv/lib/python3.12/site-packages" in script
-    assert "find \"$1\"" not in script
-    assert "'sh', '-c'" not in script
-    assert "'sh', '-s', '--'" in script
-    for package in (
-        "nnunetv2",
-        "torch",
-        "dynamic-network-architectures",
-        "batchgenerators",
-        "batchgeneratorsv2",
-        "numpy",
-        "scipy",
-        "simpleitk",
-        "acvl-utils",
+    for token in (
+        "environment_status = 'reconstructed_required'",
+        "original_transitive_package_lock = 'unavailable'",
+        "2.8.1",
+        "3e9fdc5fec7c8164f8fc2c6263af8be73278130e",
+        "Task 4",
+        "checkpoint load",
+        "output replay",
     ):
-        assert package in script
+        assert token in script
+
+
+def test_recovery_container_contract_is_exact_and_readonly() -> None:
+    script = _read("scripts/demo/recover_nnunet_artifacts.ps1")
+
+    for token in (
+        "alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce",
+        "7zip=24.09-r0",
+        "docker.exe",
+        "--rm",
+        "readonly",
+        "Headers Error",
+        "267947879",
+        "home/admin_mugen/imp_cache/external_repos/loop170/nnUNet/pyproject.toml",
+        "home/admin_mugen/imp_cache/external_repos/loop170/nnUNet/nnunetv2.egg-info/PKG-INFO",
+        "home/admin_mugen/imp_cache/external_repos/loop170/nnUNet/.git/HEAD",
+        "home/admin_mugen/imp_cache/external_repos/loop170/nnUNet/.git/refs/heads/master",
+    ):
+        assert token in script
+    assert "--privileged" not in script
+    assert "--device" not in script
+    assert "Mount-VHD -Path $resolvedVhd -ReadOnly" in script
+    assert "mount -t ext4 -o ro,noload" in script
+
+
+def test_recovery_container_arguments_lock_mounts_and_image() -> None:
+    result = _run_recovery_function_harness(
+        ("New-ContainerRecoveryArguments",),
+        "$value=@(New-ContainerRecoveryArguments -VhdPath 'E:\\source.vhdx' "
+        "-OutputRoot 'E:\\fresh output'); $value | ConvertTo-Json -Compress",
+    )
+
+    assert result.returncode == 0, result.stderr
+    arguments = json.loads(result.stdout.strip())
+    command = " ".join(arguments)
+    assert arguments[:3] == ["run", "--rm", "-i"]
+    assert "source=E:\\source.vhdx,target=/input/source.vhdx,readonly" in command
+    assert "source=E:\\fresh output,target=/output" in command
+    assert "--privileged" not in arguments and "--device" not in arguments
+    assert arguments[-4:] == [
+        "alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce",
+        "sh",
+        "-s",
+        "--",
+    ]
+
+
+def test_recovery_parser_accepts_only_observed_header_warning() -> None:
+    valid = _run_recovery_function_harness(
+        ("Assert-ContainerParserResult",),
+        "$value=Assert-ContainerParserResult -ProcessResult ([pscustomobject]@{"
+        "ExitCode=0;Lines=@('recovery_7zip=7zip-24.09-r0','ERRORS:',"
+        "'Headers Error','Archives with Errors: 1','recovery_7zip_exit=2')}); $value",
+    )
+    wrong = _run_recovery_function_harness(
+        ("Assert-ContainerParserResult",),
+        "Assert-ContainerParserResult -ProcessResult ([pscustomobject]@{"
+        "ExitCode=0;Lines=@('recovery_7zip=7zip-24.09-r0','CRC Error',"
+        "'recovery_7zip_exit=2')})",
+    )
+
+    assert valid.returncode == 0, valid.stderr
+    assert valid.stdout.strip() == "Headers Error"
+    assert wrong.returncode != 0
+    assert "unexpected parser diagnostic" in wrong.stderr
+
+
+def test_recovery_container_context_uses_mocked_exact_docker() -> None:
+    image = (
+        "alpine:3.22@sha256:"
+        "14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce"
+    )
+    repo_digest = image.replace(":3.22@", "@")
+    result = _run_recovery_function_harness(
+        ("Get-ContainerRecoveryContext",),
+        "$script:calls=New-Object 'System.Collections.Generic.List[string]'; "
+        "function Get-Command { [pscustomobject]@{Name='docker.exe';"
+        "CommandType='Application';Source='C:\\Docker\\docker.exe'} }; "
+        "function Test-Path { $true }; "
+        "function Invoke-DockerCommand { param($DockerPath,$Arguments,$Label) "
+        "$script:calls.Add(($Arguments -join ' ')); if($Arguments[0] -eq 'version'){"
+        "[pscustomobject]@{ExitCode=0;Lines=@('27.0.0')}}else{"
+        f"[pscustomobject]@{{ExitCode=0;Lines=@('{repo_digest}')}}}} }}; "
+        "$context=Get-ContainerRecoveryContext; [pscustomobject]@{"
+        "path=$context.DockerPath;image=$context.Image;calls=@($script:calls)} | "
+        "ConvertTo-Json -Depth 4 -Compress",
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout.strip())
+    assert payload["path"] == r"C:\Docker\docker.exe"
+    assert payload["image"] == image
+    assert payload["calls"][0].startswith("version")
+    assert payload["calls"][1].startswith("image inspect")
+
+
+def test_recovery_writes_honest_reconstructed_runtime_identity(tmp_path: Path) -> None:
+    source = {
+        "pyproject.toml": '[project]\nversion = "2.8.1"\n',
+        "PKG-INFO": "Name: nnunetv2\nVersion: 2.8.1\n",
+        "HEAD": "ref: refs/heads/master\n",
+        "master": "3e9fdc5fec7c8164f8fc2c6263af8be73278130e\n",
+    }
+    for name, value in source.items():
+        (tmp_path / name).write_text(value, encoding="ascii")
+    root = _powershell_literal(tmp_path)
+    result = _run_recovery_function_harness(
+        ("Get-FileIdentity", "Write-Utf8NoBom", "Write-ReconstructedRuntimeIdentity"),
+        f"Write-ReconstructedRuntimeIdentity -Root '{root}' -Backend "
+        "'container-readonly-7zip' -ParserWarning 'Headers Error'",
+    )
+
+    assert result.returncode == 0, result.stderr
+    identity = json.loads((tmp_path / "runtime_identity.json").read_text())
+    lock = (tmp_path / "requirements.lock").read_text()
+    assert identity["environment_status"] == "reconstructed_required"
+    assert identity["source_identity"]["version"] == "2.8.1"
+    assert identity["source_identity"]["git_commit"] == (
+        "3e9fdc5fec7c8164f8fc2c6263af8be73278130e"
+    )
+    assert identity["original_transitive_package_lock"] == "unavailable"
+    assert "Task 4" in lock and "full transitive lock" in lock
+    assert "nnunetv2 @ git+https://github.com/MIC-DKFZ/nnUNet.git@3e9fdc5" in lock
+    assert "torch==" not in lock and "numpy==" not in lock
 
 
 def test_recovery_wsl_path_keeps_single_line_as_string() -> None:
@@ -475,6 +571,23 @@ def test_recovery_design_documents_locked_inspection_fallback() -> None:
         "root-only",
         "fallback",
         "preflight",
+    ):
+        assert token in design
+
+
+def test_recovery_design_documents_container_parser_proof_and_replay_gate() -> None:
+    design = _read("docs/superpowers/specs/2026-07-21-dual-live-demo-design.md").lower()
+
+    for token in (
+        "container parser",
+        "registered vhd",
+        "read-only bind",
+        "no block mount",
+        "journal replay",
+        "pinned artifact hashes",
+        "reconstructed",
+        "checkpoint load",
+        "output replay",
     ):
         assert token in design
 

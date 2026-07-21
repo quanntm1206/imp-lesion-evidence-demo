@@ -110,6 +110,12 @@ immutable source and does not attempt distro repair:
    used, after a preflight proves UID 0 and every required command. Mount the
    ext4 filesystem with `ro,noload`; abort if either read-only property cannot
    be proved before file access.
+   When the registered VHD cannot be host-attached because its handle is in use,
+   the locked container parser is permitted as a non-administrator fallback.
+   Its triple proof is an exact Docker read-only bind, no block mount, no journal replay,
+   and the pinned artifact hashes. The original transitive environment
+   is unavailable, so the runtime is reconstructed and must pass checkpoint load
+   plus output replay before public launch.
 4. Copy only the Loop192 checkpoint, plans, fingerprint, dataset metadata,
    trainer metadata, prediction metadata, and environment lock data into a new
    extraction directory. Do not execute binaries or import Python modules from

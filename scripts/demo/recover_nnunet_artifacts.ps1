@@ -339,7 +339,272 @@ function Write-RuntimeIdentity {
     Write-Utf8NoBom -Path (Join-Path $Root 'requirements.lock') -Value (($lockLines -join "`n") + "`n")
 }
 
-function Invoke-Recovery {
+function Invoke-DockerCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$DockerPath,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+
+    $output = & $DockerPath @Arguments 2>&1
+    return [pscustomobject]@{
+        ExitCode = $LASTEXITCODE
+        Lines = @($output | ForEach-Object { "$_" })
+        Label = $Label
+    }
+}
+
+function Get-ContainerRecoveryContext {
+    $image = 'alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce'
+    $requiredDigest = 'sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce'
+    $commands = @(Get-Command 'docker.exe' -CommandType Application -ErrorAction SilentlyContinue)
+    if ($commands.Count -ne 1) {
+        return $null
+    }
+    $dockerPath = [IO.Path]::GetFullPath([string]$commands[0].Source)
+    if ([IO.Path]::GetFileName($dockerPath) -cne 'docker.exe' -or -not (Test-Path -LiteralPath $dockerPath -PathType Leaf)) {
+        return $null
+    }
+    $daemon = Invoke-DockerCommand -DockerPath $dockerPath -Arguments @('version', '--format', '{{.Server.Version}}') -Label 'Docker daemon preflight'
+    if ($daemon.ExitCode -ne 0 -or @($daemon.Lines).Count -ne 1 -or -not ([string]$daemon.Lines[0]).Trim()) {
+        return $null
+    }
+    $inspect = Invoke-DockerCommand -DockerPath $dockerPath -Arguments @('image', 'inspect', '--format', '{{range .RepoDigests}}{{println .}}{{end}}', $image) -Label 'Docker image digest preflight'
+    if ($inspect.ExitCode -ne 0) {
+        return $null
+    }
+    $digests = @($inspect.Lines | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+    if (@($digests | Where-Object { $_.EndsWith("@$requiredDigest", [StringComparison]::Ordinal) }).Count -eq 0) {
+        throw 'Docker recovery image digest mismatch'
+    }
+    return [pscustomobject]@{
+        DockerPath = $dockerPath
+        Image = $image
+    }
+}
+
+function New-ContainerRecoveryArguments {
+    param(
+        [Parameter(Mandatory = $true)][string]$VhdPath,
+        [Parameter(Mandatory = $true)][string]$OutputRoot
+    )
+
+    foreach ($path in @($VhdPath, $OutputRoot)) {
+        if (-not [IO.Path]::IsPathRooted($path) -or $path.IndexOfAny([char[]]",`r`n") -ge 0) {
+            throw 'Docker bind paths must be resolved absolute paths without commas or newlines'
+        }
+    }
+    $image = 'alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce'
+    return @(
+        'run', '--rm', '-i',
+        '--pull', 'never',
+        '--cap-drop', 'ALL',
+        '--security-opt', 'no-new-privileges:true',
+        '--mount', "type=bind,source=$VhdPath,target=/input/source.vhdx,readonly",
+        '--mount', "type=bind,source=$OutputRoot,target=/output",
+        $image, 'sh', '-s', '--'
+    )
+}
+
+function Get-ContainerRecoveryEntries {
+    return @(
+        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_results/Dataset192_IMPlesionCleanV3RGB256/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_all/checkpoint_final.pth'; Target = 'checkpoint_final.pth' },
+        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_preprocessed/Dataset192_IMPlesionCleanV3RGB256/nnUNetPlans.json'; Target = 'nnUNetPlans.json' },
+        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_preprocessed/Dataset192_IMPlesionCleanV3RGB256/dataset_fingerprint.json'; Target = 'dataset_fingerprint.json' },
+        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_raw/Dataset192_IMPlesionCleanV3RGB256/dataset.json'; Target = 'dataset.json' },
+        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_results/Dataset192_IMPlesionCleanV3RGB256/nnUNetTrainer_100epochs__nnUNetPlans__2d/plans.json'; Target = 'plans.json' },
+        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/external_repos/loop170/nnUNet/pyproject.toml'; Target = 'pyproject.toml' },
+        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/external_repos/loop170/nnUNet/nnunetv2.egg-info/PKG-INFO'; Target = 'PKG-INFO' },
+        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/external_repos/loop170/nnUNet/.git/HEAD'; Target = 'HEAD' },
+        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/external_repos/loop170/nnUNet/.git/refs/heads/master'; Target = 'master' }
+    )
+}
+
+function Invoke-DockerParserProcess {
+    param(
+        [Parameter(Mandatory = $true)][string]$DockerPath,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$Script
+    )
+
+    $output = ($Script + "`n#") | & $DockerPath @Arguments 2>&1
+    return [pscustomobject]@{
+        ExitCode = $LASTEXITCODE
+        Lines = @($output | ForEach-Object { "$_" })
+    }
+}
+
+function Assert-ContainerParserResult {
+    param([Parameter(Mandatory = $true)]$ProcessResult)
+
+    if ($ProcessResult.ExitCode -ne 0) {
+        throw "Docker parser process failed with exit code $($ProcessResult.ExitCode)"
+    }
+    $lines = @($ProcessResult.Lines | ForEach-Object { ([string]$_).Trim() })
+    if (@($lines | Where-Object { $_ -ceq 'recovery_7zip=7zip-24.09-r0' }).Count -ne 1) {
+        throw 'Docker parser did not prove 7zip=24.09-r0'
+    }
+    $exitLines = @($lines | Where-Object { $_ -like 'recovery_7zip_exit=*' })
+    if ($exitLines.Count -ne 1 -or $exitLines[0] -notmatch '^recovery_7zip_exit=[012]$') {
+        throw 'Docker parser returned an invalid 7zip exit marker'
+    }
+    $allowedDiagnostics = @('ERRORS:', 'Headers Error', 'Archives with Errors: 1', 'Open Errors: 1')
+    $diagnostics = @($lines | Where-Object { $_ -match '(?i)(warning|error)' })
+    foreach ($diagnostic in $diagnostics) {
+        if ($allowedDiagnostics -notcontains $diagnostic) {
+            throw "unexpected parser diagnostic: $diagnostic"
+        }
+    }
+    if (@($lines | Where-Object { $_ -ceq 'Headers Error' }).Count -ne 1) {
+        throw 'Docker parser did not report the observed Headers Error warning'
+    }
+    return 'Headers Error'
+}
+
+function Assert-ExactRecoveryFiles {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string[]]$Expected
+    )
+
+    $items = @(Get-ChildItem -LiteralPath $Root -Force)
+    if (@($items | Where-Object { $_.PSIsContainer }).Count -ne 0) {
+        throw 'recovery output contains an unexpected directory'
+    }
+    $actual = @($items | ForEach-Object { $_.Name } | Sort-Object)
+    $wanted = @($Expected | Sort-Object)
+    if (($actual -join "`n") -cne ($wanted -join "`n")) {
+        throw "recovery output allowlist mismatch: $($actual -join ', ')"
+    }
+}
+
+function Write-ReconstructedRuntimeIdentity {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Backend,
+        [Parameter(Mandatory = $true)][string]$ParserWarning
+    )
+
+    $version = '2.8.1'
+    $commit = '3e9fdc5fec7c8164f8fc2c6263af8be73278130e'
+    $pyproject = [IO.File]::ReadAllText((Join-Path $Root 'pyproject.toml'))
+    $pkgInfo = [IO.File]::ReadAllText((Join-Path $Root 'PKG-INFO'))
+    $head = [IO.File]::ReadAllText((Join-Path $Root 'HEAD')).Trim()
+    $master = [IO.File]::ReadAllText((Join-Path $Root 'master')).Trim()
+    if ($pyproject -notmatch 'version\s*=\s*"2\.8\.1"' -or $pkgInfo -notmatch '(?m)^Version:\s*2\.8\.1\s*$') {
+        throw 'recovered nnunet source version mismatch'
+    }
+    if ($head -cne 'ref: refs/heads/master' -or $master -cne $commit) {
+        throw 'recovered nnunet source commit mismatch'
+    }
+    $sourceFiles = [ordered]@{}
+    foreach ($name in @('pyproject.toml', 'PKG-INFO', 'HEAD', 'master')) {
+        $sourceFiles[$name] = Get-FileIdentity -Path (Join-Path $Root $name)
+    }
+    $identity = [ordered]@{
+        schema_version = 'loop192.runtime.identity.v1'
+        environment_status = 'reconstructed_required'
+        recovery_backend = $Backend
+        parser_warning = $ParserWarning
+        source_identity = [ordered]@{
+            distribution = 'nnunetv2'
+            version = $version
+            git_commit = $commit
+            files = $sourceFiles
+        }
+        original_transitive_package_lock = 'unavailable'
+        reconstruction_gate = @('Task 4 full transitive lock', 'checkpoint load', 'output replay')
+    }
+    Write-Utf8NoBom -Path (Join-Path $Root 'runtime_identity.json') -Value (($identity | ConvertTo-Json -Depth 8) + "`n")
+    $lock = @(
+        '# Original Loop192 transitive package lock unavailable; this is not the original environment.',
+        '# Task 4 must resolve the full transitive lock and pass checkpoint load plus output replay.',
+        "nnunetv2 @ git+https://github.com/MIC-DKFZ/nnUNet.git@$commit"
+    ) -join "`n"
+    Write-Utf8NoBom -Path (Join-Path $Root 'requirements.lock') -Value ($lock + "`n")
+}
+
+function Invoke-ContainerRecovery {
+    param(
+        [Parameter(Mandatory = $true)]$Context,
+        [Parameter(Mandatory = $true)][string]$VhdPath,
+        [Parameter(Mandatory = $true)][string]$ReportPath,
+        [Parameter(Mandatory = $true)][string]$OutputRoot
+    )
+
+    $resolvedVhd = Resolve-ExplicitFile -Path $VhdPath -Label 'VHD'
+    $resolvedReport = Resolve-ExplicitFile -Path $ReportPath -Label 'report'
+    $resolvedOutput = [IO.Path]::GetFullPath($OutputRoot)
+    if (Test-Path -LiteralPath $resolvedOutput) {
+        if (-not (Get-Item -LiteralPath $resolvedOutput -Force).PSIsContainer -or @(Get-ChildItem -LiteralPath $resolvedOutput -Force).Count -ne 0) {
+            throw 'OutputRoot must be an empty directory'
+        }
+    }
+    else {
+        [void](New-Item -ItemType Directory -Path $resolvedOutput)
+    }
+    $before = Get-VhdSnapshot -Path $resolvedVhd
+    $entries = @(Get-ContainerRecoveryEntries)
+    $arguments = @(New-ContainerRecoveryArguments -VhdPath $resolvedVhd -OutputRoot $resolvedOutput)
+    $arguments += @($entries | ForEach-Object { $_.Source })
+    $parserScript = @'
+set -u
+apk add --no-cache '7zip=24.09-r0' >/tmp/apk.log 2>&1 || { cat /tmp/apk.log; exit 71; }
+apk info -e '7zip=24.09-r0' || exit 72
+apk info -v 7zip | grep -Fx '7zip-24.09-r0' >/dev/null || exit 73
+printf 'recovery_7zip=7zip-24.09-r0\n'
+set +e
+7zz e -y -o/output /input/source.vhdx "$@" >/tmp/7zip.log 2>&1
+status=$?
+set -e
+cat /tmp/7zip.log
+printf 'recovery_7zip_exit=%s\n' "$status"
+exit 0
+'@
+    $result = Invoke-DockerParserProcess -DockerPath $Context.DockerPath -Arguments $arguments -Script $parserScript
+    $warning = Assert-ContainerParserResult -ProcessResult $result
+    $rawNames = @($entries | ForEach-Object { $_.Target })
+    Assert-ExactRecoveryFiles -Root $resolvedOutput -Expected $rawNames
+    if ((Get-Item -LiteralPath (Join-Path $resolvedOutput 'checkpoint_final.pth')).Length -ne 267947879) {
+        throw 'checkpoint size does not match Loop192 recovery evidence'
+    }
+    $after = Get-VhdSnapshot -Path $resolvedVhd
+    Assert-SnapshotUnchanged -Before $before -After $after
+    Write-ReconstructedRuntimeIdentity -Root $resolvedOutput -Backend 'container-readonly-7zip' -ParserWarning $warning
+
+    $sourceReport = Get-Content -LiteralPath $resolvedReport -Raw | ConvertFrom-Json
+    $verificationReport = [ordered]@{
+        candidate_id = $sourceReport.candidate_id
+        provenance = $sourceReport.provenance
+        source_vhd_proof = [ordered]@{ before = $before; after = $after }
+    }
+    $repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    $pythonExe = Join-Path $repoRoot '.venv-win\Scripts\python.exe'
+    $verifierPath = Join-Path $PSScriptRoot 'verify_nnunet_bundle.py'
+    $receiptPath = Join-Path $resolvedOutput 'recovery_receipt.json'
+    $verifierCode = @'
+import importlib.util
+import json
+from pathlib import Path
+import sys
+spec = importlib.util.spec_from_file_location("loop192_verifier", sys.argv[1])
+if spec is None or spec.loader is None:
+    raise RuntimeError("unable to load trusted verifier")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+receipt = module.verify_bundle(Path(sys.argv[2]), json.loads(sys.stdin.read()))
+receipt.update(recovery_backend="container-readonly-7zip", parser_warning="Headers Error", runtime_status="reconstructed_required")
+Path(sys.argv[3]).write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+'@
+    ($verificationReport | ConvertTo-Json -Depth 8 -Compress) | & $pythonExe -c $verifierCode $verifierPath $resolvedOutput $receiptPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Loop192 bundle verification failed with exit code $LASTEXITCODE"
+    }
+    Assert-ExactRecoveryFiles -Root $resolvedOutput -Expected @($rawNames + 'runtime_identity.json' + 'requirements.lock' + 'recovery_receipt.json')
+    Write-Output 'recovery=passed backend=container-readonly-7zip warning=Headers Error runtime_status=reconstructed_required'
+}
+
+function Invoke-WindowsAttachRecovery {
     Assert-Administrator
 
     foreach ($command in @('Mount-VHD', 'Dismount-VHD', 'Get-Disk', 'Get-DiskImage')) {
@@ -575,8 +840,23 @@ Path(sys.argv[3]).write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n
     Write-Output 'recovery=passed'
 }
 
+function Invoke-AutomaticRecovery {
+    $containerContext = Get-ContainerRecoveryContext
+    if ($null -ne $containerContext) {
+        Invoke-ContainerRecovery `
+            -Context $containerContext `
+            -VhdPath $VhdPath `
+            -ReportPath $ReportPath `
+            -OutputRoot $OutputRoot
+        return
+    }
+
+    Assert-Administrator
+    Invoke-WindowsAttachRecovery
+}
+
 try {
-    Invoke-Recovery
+    Invoke-AutomaticRecovery
     exit 0
 }
 catch {
