@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import stat
 import threading
 from typing import Any, Protocol, cast
 
@@ -34,6 +35,23 @@ class PredictorBackend(Protocol):
     ready: bool
 
     def predict(self, image: np.ndarray) -> tuple[np.ndarray, float]: ...
+
+
+def _is_container_namespace() -> bool:
+    if os.name != "posix":
+        return False
+    marker = Path("/.dockerenv")
+    try:
+        if not stat.S_ISREG(os.lstat(marker).st_mode):
+            return False
+        init_namespace = os.stat("/proc/1/ns/mnt")
+        process_namespace = os.stat("/proc/self/ns/mnt")
+    except OSError:
+        return False
+    return (init_namespace.st_dev, init_namespace.st_ino) == (
+        process_namespace.st_dev,
+        process_namespace.st_ino,
+    )
 
 
 class SidecarHTTPServer(ThreadingHTTPServer):
@@ -137,7 +155,9 @@ def make_server(
     port: int = 7862,
     host: str = "127.0.0.1",
 ) -> SidecarHTTPServer:
-    if host not in {"127.0.0.1", "0.0.0.0"}:
+    if host != "127.0.0.1" and not (
+        host == "0.0.0.0" and _is_container_namespace()
+    ):
         raise ValueError("invalid_bind_host")
     if (
         backend.model_id != MODEL_ID

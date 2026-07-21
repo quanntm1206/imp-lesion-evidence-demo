@@ -21,14 +21,29 @@ from lesion_robustness.demo.dual_live_protocol import MODEL_ID, validate_binary_
 
 
 MANIFEST_SCHEMA = "imp.nnunet.model-manifest.v1"
-REQUIRED_ARTIFACTS = frozenset(
-    {
+EXPECTED_ARTIFACTS = (
+    (
         "checkpoint_final.pth",
-        "plans.json",
+        "3814716033afd464dacc573f92a5a44ff20eb7f2163d99b4f16ecff8aa278ea2",
+        267947879,
+    ),
+    (
         "dataset.json",
+        "eb33bcbad9d8d5c96168b3c12171392ffabf63ba4cbff4f2bf4badc98bf6487a",
+        183,
+    ),
+    (
         "dataset_fingerprint.json",
-    }
+        "931da8aae52ffecd726d5928009ebdcae7002e24b035fad89177e0bc81dba85c",
+        274020,
+    ),
+    (
+        "plans.json",
+        "b60e4defd229b03f7064dc5b66123545c91cdaa44c09d990b86690a94e1e08a7",
+        6379,
+    ),
 )
+REQUIRED_ARTIFACTS = frozenset(entry[0] for entry in EXPECTED_ARTIFACTS)
 EXPECTED_RUNTIME_VERSION = "2.8.1"
 EXPECTED_RUNTIME_COMMIT = "3e9fdc5fec7c8164f8fc2c6263af8be73278130e"
 NATURAL_IMAGE_SPACING = (999.0, 1.0, 1.0)
@@ -115,6 +130,14 @@ def _load_manifest(path: Path) -> dict[str, Any]:
                 or entry["size"] < 1
             ):
                 raise ValueError
+        observed_artifacts = tuple(
+            sorted(
+                (name, str(entry["sha256"]), int(entry["size"]))
+                for name, entry in artifacts.items()
+            )
+        )
+        if observed_artifacts != EXPECTED_ARTIFACTS:
+            raise ValueError
         return raw
     except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
         raise ArtifactDriftError() from exc
@@ -153,26 +176,32 @@ def _verify_artifacts(bundle: Path, manifest: Mapping[str, Any]) -> None:
 
 
 def _assert_runtime_api(predictor_class: type[Any]) -> None:
+    positional = inspect.Parameter.POSITIONAL_OR_KEYWORD
+    required = inspect.Parameter.empty
     expected = {
         "initialize_from_trained_model_folder": (
-            "self",
-            "model_training_output_dir",
-            "use_folds",
-            "checkpoint_name",
+            ("self", positional, required),
+            ("model_training_output_dir", positional, required),
+            ("use_folds", positional, required),
+            ("checkpoint_name", positional, "checkpoint_final.pth"),
         ),
         "predict_single_npy_array": (
-            "self",
-            "input_image",
-            "image_properties",
-            "segmentation_previous_stage",
-            "output_file_truncated",
-            "save_or_return_probabilities",
+            ("self", positional, required),
+            ("input_image", positional, required),
+            ("image_properties", positional, required),
+            ("segmentation_previous_stage", positional, None),
+            ("output_file_truncated", positional, None),
+            ("save_or_return_probabilities", positional, False),
         ),
     }
     try:
-        for method_name, parameters in expected.items():
+        for method_name, expected_parameters in expected.items():
             method = getattr(predictor_class, method_name)
-            if tuple(inspect.signature(method).parameters) != parameters:
+            observed_parameters = tuple(
+                (parameter.name, parameter.kind, parameter.default)
+                for parameter in inspect.signature(method).parameters.values()
+            )
+            if observed_parameters != expected_parameters:
                 raise RuntimeConfigurationError()
     except (AttributeError, TypeError, ValueError) as exc:
         raise RuntimeConfigurationError() from exc

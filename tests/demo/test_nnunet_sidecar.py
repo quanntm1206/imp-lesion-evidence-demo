@@ -7,12 +7,16 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import threading
+from types import SimpleNamespace
 from typing import Iterator
 
 import numpy as np
 import pytest
 
+import sidecar.nnunet.predictor as predictor_module
+import sidecar.nnunet.server as server_module
 from lesion_robustness.demo.dual_live_protocol import (
     CHECKPOINT_SHA256,
     MAX_REQUEST_BYTES,
@@ -22,7 +26,11 @@ from lesion_robustness.demo.dual_live_protocol import (
     encode_request,
     expected_bindings,
 )
-from sidecar.nnunet.predictor import ArtifactDriftError, Loop192Predictor
+from sidecar.nnunet.predictor import (
+    ArtifactDriftError,
+    Loop192Predictor,
+    RuntimeConfigurationError,
+)
 from sidecar.nnunet.server import make_server
 
 
@@ -151,8 +159,17 @@ def test_health_is_path_free_and_bound_to_loopback_identity() -> None:
     assert "checkpoint_final.pth" not in serialized
 
 
-def test_container_listener_requires_an_explicit_allowlisted_host() -> None:
+def test_container_listener_requires_verified_container_namespace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     backend = FakePredictor(np.zeros((3, 4), dtype=np.uint8))
+    monkeypatch.setenv("NNUNET_BIND_HOST", "0.0.0.0")
+    monkeypatch.setattr(server_module, "_is_container_namespace", lambda: False)
+
+    with pytest.raises(ValueError, match="invalid_bind_host"):
+        make_server(backend, port=0, host="0.0.0.0")
+
+    monkeypatch.setattr(server_module, "_is_container_namespace", lambda: True)
 
     container_server = make_server(backend, port=0, host="0.0.0.0")
     try:
@@ -162,6 +179,61 @@ def test_container_listener_requires_an_explicit_allowlisted_host() -> None:
 
     with pytest.raises(ValueError, match="invalid_bind_host"):
         make_server(backend, port=0, host="192.168.1.20")
+
+
+@pytest.mark.parametrize(
+    ("os_name", "marker_mode", "init_identity", "process_identity", "expected"),
+    [
+        ("nt", stat.S_IFREG, (7, 11), (7, 11), False),
+        ("posix", stat.S_IFLNK, (7, 11), (7, 11), False),
+        ("posix", stat.S_IFDIR, (7, 11), (7, 11), False),
+        ("posix", stat.S_IFREG, (7, 11), (7, 12), False),
+        ("posix", stat.S_IFREG, (7, 11), (7, 11), True),
+    ],
+)
+def test_container_namespace_gate_checks_marker_and_mount_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    os_name: str,
+    marker_mode: int,
+    init_identity: tuple[int, int],
+    process_identity: tuple[int, int],
+    expected: bool,
+) -> None:
+    def fake_lstat(path: object) -> SimpleNamespace:
+        assert str(path).replace("\\", "/") == "/.dockerenv"
+        return SimpleNamespace(st_mode=marker_mode)
+
+    def fake_stat(path: object) -> SimpleNamespace:
+        identity = init_identity if str(path) == "/proc/1/ns/mnt" else process_identity
+        return SimpleNamespace(st_dev=identity[0], st_ino=identity[1])
+
+    fake_os = SimpleNamespace(name=os_name, lstat=fake_lstat, stat=fake_stat)
+    monkeypatch.setattr(server_module, "os", fake_os)
+
+    assert server_module._is_container_namespace() is expected
+
+
+@pytest.mark.parametrize("operation", ["lstat", "stat"])
+def test_container_namespace_gate_fails_closed_on_os_error(
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+) -> None:
+    def fake_lstat(path: object) -> SimpleNamespace:
+        del path
+        if operation == "lstat":
+            raise OSError
+        return SimpleNamespace(st_mode=stat.S_IFREG)
+
+    def fake_stat(path: object) -> SimpleNamespace:
+        del path
+        if operation == "stat":
+            raise OSError
+        return SimpleNamespace(st_dev=7, st_ino=11)
+
+    fake_os = SimpleNamespace(name="posix", lstat=fake_lstat, stat=fake_stat)
+    monkeypatch.setattr(server_module, "os", fake_os)
+
+    assert server_module._is_container_namespace() is False
 
 
 def test_invalid_json_and_oversized_content_length_fail_before_inference() -> None:
@@ -266,6 +338,24 @@ def _write_bundle_and_manifest(root: Path) -> tuple[Path, Path]:
     return bundle, manifest_path
 
 
+def _pin_test_artifacts(
+    manifest_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> dict[str, object]:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    monkeypatch.setattr(
+        predictor_module,
+        "EXPECTED_ARTIFACTS",
+        tuple(
+            sorted(
+                (name, entry["sha256"], entry["size"])
+                for name, entry in manifest["artifacts"].items()
+            )
+        ),
+        raising=False,
+    )
+    return manifest
+
+
 class FakeCuda:
     def __init__(self) -> None:
         self.synchronizations = 0
@@ -326,8 +416,44 @@ class FakeNnUNetPredictor:
         return np.ones((1, 2, 3), dtype=np.uint8)
 
 
-def test_predictor_verifies_artifacts_before_loading_runtime(tmp_path: Path) -> None:
+class WrongKindNnUNetPredictor(FakeNnUNetPredictor):
+    def predict_single_npy_array(
+        self,
+        input_image: np.ndarray,
+        *,
+        image_properties: dict[str, object],
+        segmentation_previous_stage: np.ndarray | None = None,
+        output_file_truncated: str | None = None,
+        save_or_return_probabilities: bool = False,
+    ) -> np.ndarray:
+        return super().predict_single_npy_array(
+            input_image,
+            image_properties,
+            segmentation_previous_stage,
+            output_file_truncated,
+            save_or_return_probabilities,
+        )
+
+
+class WrongDefaultNnUNetPredictor(FakeNnUNetPredictor):
+    def initialize_from_trained_model_folder(
+        self,
+        model_training_output_dir: str,
+        use_folds: tuple[str, ...] | None,
+        checkpoint_name: str = "checkpoint_best.pth",
+    ) -> None:
+        super().initialize_from_trained_model_folder(
+            model_training_output_dir,
+            use_folds,
+            checkpoint_name,
+        )
+
+
+def test_predictor_verifies_artifacts_before_loading_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bundle, manifest = _write_bundle_and_manifest(tmp_path)
+    _pin_test_artifacts(manifest, monkeypatch)
     (bundle / "plans.json").write_text("drift", encoding="utf-8")
     runtime_loaded = False
 
@@ -342,10 +468,57 @@ def test_predictor_verifies_artifacts_before_loading_runtime(tmp_path: Path) -> 
     assert not runtime_loaded
 
 
+def test_predictor_rejects_self_consistent_tampered_artifact_before_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundle, manifest_path = _write_bundle_and_manifest(tmp_path)
+    manifest = _pin_test_artifacts(manifest_path, monkeypatch)
+    forged_checkpoint = b"forged-checkpoint"
+    (bundle / "checkpoint_final.pth").write_bytes(forged_checkpoint)
+    manifest["artifacts"]["checkpoint_final.pth"] = {
+        "sha256": _sha256(bundle / "checkpoint_final.pth"),
+        "size": len(forged_checkpoint),
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    runtime_loaded = False
+
+    def load_runtime() -> tuple[FakeTorch, type[FakeNnUNetPredictor], str]:
+        nonlocal runtime_loaded
+        runtime_loaded = True
+        return FakeTorch(), FakeNnUNetPredictor, "2.8.1"
+
+    with pytest.raises(ArtifactDriftError, match="artifact_drift"):
+        Loop192Predictor(bundle, manifest_path, runtime_loader=load_runtime)
+
+    assert not runtime_loaded
+
+
+@pytest.mark.parametrize(
+    "predictor_class",
+    [WrongKindNnUNetPredictor, WrongDefaultNnUNetPredictor],
+    ids=["parameter-kind", "default-value"],
+)
+def test_predictor_rejects_runtime_signature_kind_or_default_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    predictor_class: type[FakeNnUNetPredictor],
+) -> None:
+    bundle, manifest = _write_bundle_and_manifest(tmp_path)
+    _pin_test_artifacts(manifest, monkeypatch)
+
+    with pytest.raises(RuntimeConfigurationError, match="runtime_unavailable"):
+        Loop192Predictor(
+            bundle,
+            manifest,
+            runtime_loader=lambda: (FakeTorch(), predictor_class, "2.8.1"),
+        )
+
+
 def test_predictor_initializes_once_and_uses_natural_image_contract(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     bundle, manifest = _write_bundle_and_manifest(tmp_path)
+    _pin_test_artifacts(manifest, monkeypatch)
     fake_torch = FakeTorch()
     FakeNnUNetPredictor.instances.clear()
     monkeypatch.delenv("nnUNet_results", raising=False)
@@ -393,24 +566,11 @@ def test_public_manifest_pins_recovered_bundle_without_private_paths() -> None:
         "recovered_git_commit": "3e9fdc5fec7c8164f8fc2c6263af8be73278130e",
         "environment_status": "reconstructed",
     }
-    assert manifest["artifacts"] == {
-        "checkpoint_final.pth": {
-            "sha256": CHECKPOINT_SHA256,
-            "size": 267947879,
-        },
-        "plans.json": {
-            "sha256": "b60e4defd229b03f7064dc5b66123545c91cdaa44c09d990b86690a94e1e08a7",
-            "size": 6379,
-        },
-        "dataset.json": {
-            "sha256": "eb33bcbad9d8d5c96168b3c12171392ffabf63ba4cbff4f2bf4badc98bf6487a",
-            "size": 183,
-        },
-        "dataset_fingerprint.json": {
-            "sha256": "931da8aae52ffecd726d5928009ebdcae7002e24b035fad89177e0bc81dba85c",
-            "size": 274020,
-        },
+    expected_artifacts = {
+        filename: {"sha256": sha256, "size": size}
+        for filename, sha256, size in predictor_module.EXPECTED_ARTIFACTS
     }
+    assert manifest["artifacts"] == expected_artifacts
     assert "private" not in json.dumps(manifest).lower()
     assert ":\\" not in json.dumps(manifest)
 
