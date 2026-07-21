@@ -1,0 +1,298 @@
+{
+  "meta": {
+    "title": "Evidence Before Leaderboards",
+    "subtitle": "A leakage-aware comparison of MiT-B3 U-Net and nnU-Net with a negative contour-channel ablation",
+    "author": "IMP Project Research Report",
+    "date": "July 2026",
+    "language": "English",
+    "duration_minutes": 11,
+    "default_demo_url": "http://127.0.0.1:7860",
+    "non_clinical_notice": "Non-clinical research demo. Segmentation output is not a diagnosis."
+  },
+  "pipeline": [
+    {
+      "id": "data-audit",
+      "label": "Data Audit",
+      "target": "s05-data",
+      "tone": "teal"
+    },
+    {
+      "id": "preprocessing",
+      "label": "Preprocessing",
+      "target": "s06-models",
+      "tone": "sand"
+    },
+    {
+      "id": "models",
+      "label": "Models",
+      "target": "s06-models",
+      "tone": "graphite"
+    },
+    {
+      "id": "robust-evaluation",
+      "label": "Robust Evaluation",
+      "target": "s07-validation",
+      "tone": "teal"
+    },
+    {
+      "id": "loop206-ablation",
+      "label": "Loop206 Ablation",
+      "target": "s08-ablation-design",
+      "tone": "rust"
+    },
+    {
+      "id": "evidence-demo",
+      "label": "Evidence-bound Demo",
+      "target": "s10-demo",
+      "tone": "teal"
+    }
+  ],
+  "slides": [
+    {
+      "id": "s01-title",
+      "kicker": "IMP PROJECT RESEARCH DEFENSE",
+      "title": "Evidence before leaderboard claims",
+      "claim": "A repaired evidence contract turns a contaminated benchmark and a failed hypothesis into defensible research.",
+      "evidence_label": "research report | July 2026",
+      "body": [
+        "MiT-B3 U-Net versus nnU-Net v2",
+        "Negative contour-channel ablation",
+        "Protected test remains sealed; this is not state of the art"
+      ],
+      "visual": "title",
+      "notes": [
+        "Open with the tension: a high Dice score is not useful when the evidence contract is broken.",
+        "State that this talk values what the evidence supports, including a negative result.",
+        "Do not describe the system as clinical or state of the art."
+      ]
+    },
+    {
+      "id": "s02-leakage",
+      "kicker": "WHY THE STUDY NEEDED REPAIR",
+      "title": "Leakage changed the meaning of every favorable score",
+      "claim": "Three patient identities and 13 rows crossed legacy split boundaries, so the old leaderboard became historical evidence rather than a scientific ranking.",
+      "evidence_label": "legacy_patient_contaminated",
+      "body": [
+        "Patient overlap violates independent patient-level interpretation.",
+        "Old test-v2 values remain visible only as contamination-aware history.",
+        "The repair starts with identity groups, not model tuning."
+      ],
+      "metrics": [
+        {"label": "crossing patient IDs", "value": "3"},
+        {"label": "cross-boundary rows", "value": "13"}
+      ],
+      "visual": "contamination",
+      "notes": [
+        "Explain that leakage is a scientific design defect, not a cosmetic caveat.",
+        "Do not compare legacy model scores as if they were independent test results.",
+        "Use this slide to motivate the evidence hierarchy."
+      ]
+    },
+    {
+      "id": "s03-questions",
+      "kicker": "BOUNDED RESEARCH QUESTIONS",
+      "title": "Two hypotheses, two evidence classes",
+      "claim": "The architecture comparison and the contour-channel ablation answer different questions and must not be collapsed into one ranking.",
+      "evidence_label": "adaptive development-validation + train_screen",
+      "body": [
+        "RQ1: How do complete MiT-B3 and nnU-Net systems trade overlap, boundary quality, precision, and recall?",
+        "RQ2: Does a saliency-constrained contour channel improve a matched MiT-B3 control?",
+        "Decision rule: reject claims that exceed their partition, seed, or metric contract."
+      ],
+      "visual": "questions",
+      "notes": [
+        "Keep the architecture comparison descriptive because it has one recorded run per system.",
+        "Describe Loop206 as a controlled train-screen ablation with three selected seeds.",
+        "Transition to the interactive pipeline as the map of the evidence flow."
+      ]
+    },
+    {
+      "id": "s04-pipeline",
+      "kicker": "CLICK A MODULE TO INSPECT IT",
+      "title": "The claim can only be as strong as its weakest evidence boundary",
+      "claim": "Every model output passes through data, protocol, metric, and claim gates before it reaches the paper or demo.",
+      "evidence_label": "interactive evidence pipeline",
+      "body": [
+        "Choose a module below.",
+        "Press Escape from any detail slide to return here."
+      ],
+      "visual": "pipeline",
+      "notes": [
+        "Use this slide nonlinearly: select the module that best matches the audience question.",
+        "For the default talk, visit modules from left to right.",
+        "The pipeline is a navigation spine, not a decorative architecture diagram."
+      ]
+    },
+    {
+      "id": "s05-data",
+      "kicker": "MODULE 01 | DATA AUDIT",
+      "title": "Clean-v3 repairs identity leakage before model comparison",
+      "claim": "The leakage-audited manifest contains 2,869 images with no detected cross-split identity-group overlap.",
+      "evidence_label": "dataset audit | protected test sealed",
+      "body": [
+        "2,008 training images",
+        "431 adaptive development-validation images",
+        "430 sealed test images",
+        "Identity, exact duplicate, perceptual duplicate, and split-group checks"
+      ],
+      "metrics": [
+        {"label": "train", "value": "2,008"},
+        {"label": "validation", "value": "431"},
+        {"label": "sealed test", "value": "430"}
+      ],
+      "visual": "data",
+      "notes": [
+        "Say no detected overlap, not proof of no hidden biological relationship.",
+        "Clarify that validation was already opened and used adaptively.",
+        "The 430-row test partition remains sealed."
+      ]
+    },
+    {
+      "id": "s06-models",
+      "kicker": "MODULES 02-03 | PREPROCESSING + MODELS",
+      "title": "The comparison is between complete systems, not isolated encoders",
+      "claim": "MiT-B3 uses a fixed preprocessing-aware 384x384 pipeline; nnU-Net v2 uses raw RGB and a self-configuring 256x256 system.",
+      "evidence_label": "adaptive development-validation | older geometry contract",
+      "body": [
+        "IMP control: LAB-luminance CLAHE, percentile stretch, median filter, MiT-B3 U-Net.",
+        "nnU-Net v2: raw RGB, generated plans, 2D self-configuring pipeline.",
+        "Resolution, decoder, loss, augmentation, and policy all differ.",
+        "The result cannot identify which component causes the observed difference."
+      ],
+      "visual": "models",
+      "notes": [
+        "Avoid calling this a controlled architecture ablation.",
+        "Explain that nnU-Net is a strong system-level baseline.",
+        "Mention the historical geometry mismatch as a limitation, not a hidden footnote."
+      ]
+    },
+    {
+      "id": "s07-validation",
+      "kicker": "MODULE 04 | ROBUST EVALUATION",
+      "title": "nnU-Net records higher point estimates, not statistical superiority",
+      "claim": "On adaptive development-validation, nnU-Net v2 has higher robust Dice and boundary F1 point estimates; MiT-B3 retains slightly higher precision.",
+      "evidence_label": "adaptive development-validation | single run | selection-optimistic",
+      "body": [
+        "No paired confidence interval is available.",
+        "Validation informed iterative development and promotion decisions.",
+        "The correct conclusion is descriptive and contract-specific."
+      ],
+      "metrics": [
+        {"label": "MiT-B3 robust Dice", "value": "0.8959"},
+        {"label": "nnU-Net robust Dice", "value": "0.9019"},
+        {"label": "MiT-B3 BF1", "value": "0.4145"},
+        {"label": "nnU-Net BF1", "value": "0.4369"}
+      ],
+      "visual": "validation",
+      "notes": [
+        "Read the values as recorded point estimates.",
+        "Do not say statistically significant, superior, or test performance.",
+        "Use the precision direction to show that metric trade-offs matter."
+      ]
+    },
+    {
+      "id": "s08-ablation-design",
+      "kicker": "MODULE 05 | LOOP206 DESIGN",
+      "title": "Loop206 isolates one intervention: the fourth input channel",
+      "claim": "Control and candidate share architecture, preprocessing, seeds, budget, and loss; only the zero versus contour channel changes.",
+      "evidence_label": "train_screen | three selected seeds | 76 groups",
+      "body": [
+        "308 fit groups; 76 train-screen holdout groups",
+        "Three selected seeds and three preregistered views",
+        "20 epochs per matched arm",
+        "Cluster bootstrap resamples groups after averaging seeds and views"
+      ],
+      "metrics": [
+        {"label": "fit groups", "value": "308"},
+        {"label": "holdout groups", "value": "76"},
+        {"label": "paired seeds", "value": "3"}
+      ],
+      "visual": "ablation",
+      "notes": [
+        "This is the stronger causal comparison because the arms are matched.",
+        "The interval is conditional on the selected seeds and does not estimate seed-selection uncertainty.",
+        "No protected image or mask participates in fitting, thresholding, selection, or evaluation."
+      ]
+    },
+    {
+      "id": "s09-negative-result",
+      "kicker": "MODULE 05 | DECISION",
+      "title": "The contour channel fails the primary gate",
+      "claim": "Seed-and-view-averaged robust Dice changes by -0.0313; its conditional 95% interval lies entirely below zero.",
+      "evidence_label": "train_screen | conditional on the selected seeds",
+      "body": [
+        "Robust Dice: -0.0313, CI [-0.0491, -0.0156]",
+        "Boundary F1: -0.0147, CI [-0.0308, 0.0010]",
+        "Per-seed directions are mixed: one slightly positive, two negative.",
+        "The candidate is rejected before protected evaluation."
+      ],
+      "visual": "loop206-delta",
+      "notes": [
+        "Pause on the negative result: it is the main controlled finding.",
+        "Do not generalize from this binary contour mechanism to all boundary methods.",
+        "Explain that a failed preregistered gate prevents expensive protected-test fishing."
+      ]
+    },
+    {
+      "id": "s10-demo",
+      "kicker": "MODULE 06 | EVIDENCE-BOUND DEMO",
+      "title": "The demo compares only what the registry authorizes",
+      "claim": "The public workbench supports exact fixed-cache comparison; arbitrary uploads remain control-only because candidate prior parity is 0/76.",
+      "evidence_label": "train_screen | exact_fixed_cache | non-clinical",
+      "body": [
+        "Real GPU outputs and path-free receipts",
+        "Provider-bound ground truth with raw, decoded, and runtime mask digests",
+        "Candidate output disabled for arbitrary uploads",
+        "Non-clinical research demo; not a diagnosis"
+      ],
+      "metrics": [
+        {"label": "candidate prior parity", "value": "0/76"},
+        {"label": "queue concurrency", "value": "1"}
+      ],
+      "visual": "qualitative-demo",
+      "notes": [
+        "Open the live demo only after local preflight passes.",
+        "Show fixed-cache evidence first, then explain why arbitrary candidate inference is locked.",
+        "Keep the non-clinical warning visible."
+      ]
+    },
+    {
+      "id": "s11-reproducibility",
+      "kicker": "REPRODUCIBILITY + LIMITS",
+      "title": "Claims are reproducible; full retraining is not yet clone-runnable",
+      "claim": "The release binds claims, tables, figures, PDF, model IDs, and source reports by hash while explicitly disclosing missing experiment artifacts.",
+      "evidence_label": "hash-bound release | protected test remains sealed",
+      "body": [
+        "Clean checkout CPU CI rebuilds tables, audits the paper, and compiles the PDF.",
+        "Runtime checkpoints and data remain outside Git and are verified at startup.",
+        "Loop191/192 configs, implementation modules, and paired predictions are incomplete in the tracked release.",
+        "Physical RTX 4060 and browser screenshots remain unverified."
+      ],
+      "visual": "reproducibility",
+      "notes": [
+        "Separate claim reproducibility from full experiment reproduction.",
+        "State what is intentionally excluded from Git: data, checkpoints, caches, and secrets.",
+        "Do not imply that this machine's RTX 5060 Ti rehearsal verifies the physical laptop."
+      ]
+    },
+    {
+      "id": "s12-conclusion",
+      "kicker": "DEFENSIBLE TAKEAWAY",
+      "title": "A narrower conclusion is the stronger scientific result",
+      "claim": "nnU-Net records higher development-validation point estimates, the hard contour prior fails its matched train-screen gate, and no protected-test or state-of-the-art claim is authorized.",
+      "evidence_label": "scientific_sota_status = not_established",
+      "body": [
+        "Repair leakage before optimizing models.",
+        "Use strong system baselines without hiding contract differences.",
+        "Publish negative ablations when they reject a mechanism.",
+        "Next: reproduce both systems under one geometry contract before any protected test."
+      ],
+      "visual": "conclusion",
+      "notes": [
+        "Resolve the opening tension: evidence discipline prevented a false leaderboard claim.",
+        "End on the next defensible experiment, not a generic thank-you slide.",
+        "Invite questions about evidence boundaries, the matched ablation, or the demo."
+      ]
+    }
+  ]
+}
