@@ -83,3 +83,17 @@ def test_each_slide_has_claim_evidence_label_and_notes() -> None:
         assert slide["evidence_label"].strip()
         assert len(slide["notes"]) >= 2
 
+
+def test_asset_manifest_binds_source_and_output_bytes() -> None:
+    manifest = json.loads(ASSET_MANIFEST.read_text(encoding="utf-8"))
+    assert manifest["schema"] == "imp.presentation.assets/v1"
+    assert len(manifest["assets"]) == 2
+    for entry in manifest["assets"]:
+        source = ROOT / entry["source"]
+        output = ROOT / entry["output"]
+        assert not Path(entry["source"]).is_absolute()
+        assert not Path(entry["output"]).is_absolute()
+        assert _sha256(source) == entry["source_sha256"]
+        assert _sha256(output) == entry["output_sha256"]
+        assert output.suffix == ".png"
+        assert output.stat().st_size > 20_000

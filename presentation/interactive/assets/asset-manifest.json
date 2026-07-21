@@ -1,0 +1,24 @@
+{
+    "schema":  "imp.presentation.assets/v1",
+    "source":  "tracked-paper-figures",
+    "assets":  [
+                   {
+                       "name":  "loop206-delta",
+                       "source":  "paper/clean_v3_loop206/figures/loop206_delta.pdf",
+                       "source_sha256":  "4252809c43242f38c910eb39b20bb1442813b6da80a64b53dfb827bed63d543e",
+                       "output":  "presentation/interactive/assets/loop206-delta.png",
+                       "output_sha256":  "88b31def7374eed10c8eb61ebd45811700da46ef66f1be09bbf55be3aabb3d15",
+                       "bytes":  36572,
+                       "dpi":  180
+                   },
+                   {
+                       "name":  "qualitative-demo",
+                       "source":  "paper/clean_v3_loop206/figures/qualitative_demo.pdf",
+                       "source_sha256":  "33446a19549a05a80202441e016ce3757662c6c2949924a9dc5822f052ce0127",
+                       "output":  "presentation/interactive/assets/qualitative-demo.png",
+                       "output_sha256":  "899cbaadc4ceef55d9be68331a254c3225b042071b1e36197ce80db19aadd771",
+                       "bytes":  325305,
+                       "dpi":  120
+                   }
+               ]
+}
