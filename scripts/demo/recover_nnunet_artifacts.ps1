@@ -88,24 +88,26 @@ function Invoke-NativeChecked {
     return @($output | ForEach-Object { "$_" })
 }
 
-function Invoke-WslSystem {
+function Invoke-WslContext {
     param(
+        [Parameter(Mandatory = $true)][string[]]$ContextPrefix,
         [Parameter(Mandatory = $true)][string[]]$Arguments,
         [Parameter(Mandatory = $true)][string]$Label
     )
 
-    $wslArguments = @('--system', '--') + $Arguments
+    $wslArguments = @($ContextPrefix) + $Arguments
     return Invoke-NativeChecked -FilePath 'wsl.exe' -Arguments $wslArguments -Label $Label
 }
 
-function Invoke-WslSystemScript {
+function Invoke-WslContextScript {
     param(
+        [Parameter(Mandatory = $true)][string[]]$ContextPrefix,
         [Parameter(Mandatory = $true)][string]$Script,
         [string[]]$Arguments = @(),
         [Parameter(Mandatory = $true)][string]$Label
     )
 
-    $wslArguments = @('--system', '--', 'sh', '-s', '--') + $Arguments
+    $wslArguments = @($ContextPrefix) + @('sh', '-s', '--') + $Arguments
     $output = ($Script + "`n#") | & wsl.exe @wslArguments 2>&1
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0) {
@@ -114,10 +116,77 @@ function Invoke-WslSystemScript {
     return @($output | ForEach-Object { "$_" })
 }
 
-function ConvertTo-WslPath {
-    param([Parameter(Mandatory = $true)][string]$WindowsPath)
+function Resolve-WslInspectionContext {
+    $requiredCommands = @(
+        'sh',
+        'lsblk',
+        'mount',
+        'umount',
+        'cp',
+        'awk',
+        'wslpath',
+        'mountpoint',
+        'mkdir',
+        'sed',
+        'head',
+        'tr',
+        'dirname'
+    )
+    $probeScript = @'
+printf 'uid=%s\n' "$(id -u)"
+for name in "$@"; do
+    if command -v "$name" >/dev/null 2>&1; then
+        printf 'tool=%s\n' "$name"
+    else
+        printf 'missing=%s\n' "$name"
+    fi
+done
+'@
+    $candidates = @(
+        [pscustomobject]@{ Name = 'system'; Prefix = [string[]]@('--system', '--') },
+        [pscustomobject]@{ Name = 'docker-desktop'; Prefix = [string[]]@('-d', 'docker-desktop', '-u', 'root', '--') }
+    )
+    $failures = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($candidate in $candidates) {
+        try {
+            $lines = @(Invoke-WslContextScript `
+                -ContextPrefix $candidate.Prefix `
+                -Script $probeScript `
+                -Arguments $requiredCommands `
+                -Label "$($candidate.Name) inspection preflight")
+            $uidLines = @($lines | Where-Object { $_ -like 'uid=*' })
+            if ($uidLines.Count -ne 1 -or $uidLines[0] -cne 'uid=0') {
+                throw "$($candidate.Name) inspection context requires uid 0"
+            }
+            $available = @{}
+            foreach ($line in $lines) {
+                if ($line -like 'tool=*') {
+                    $available[$line.Substring(5)] = $true
+                }
+            }
+            $missing = @($requiredCommands | Where-Object { -not $available.ContainsKey($_) })
+            if ($missing.Count -ne 0) {
+                throw "$($candidate.Name) inspection context missing required commands: $($missing -join ', ')"
+            }
+            return [pscustomobject]@{
+                Name = $candidate.Name
+                Prefix = [string[]]$candidate.Prefix
+            }
+        }
+        catch {
+            [void]$failures.Add("$($candidate.Name): $($_.Exception.Message)")
+        }
+    }
+    throw "no usable WSL inspection context: $($failures -join '; ')"
+}
 
-    $values = @(Invoke-WslSystem -Arguments @('wslpath', '-a', '-u', '--', $WindowsPath) -Label 'output path conversion')
+function ConvertTo-WslPath {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$ContextPrefix,
+        [Parameter(Mandatory = $true)][string]$WindowsPath
+    )
+
+    $values = @(Invoke-WslContext -ContextPrefix $ContextPrefix -Arguments @('wslpath', '-a', '-u', '--', $WindowsPath) -Label 'output path conversion')
     if ($values.Count -ne 1) {
         throw "output path conversion returned $($values.Count) lines"
     }
@@ -133,6 +202,7 @@ function Invoke-RecoveryCleanup {
         [bool]$FilesystemMountAttempted,
         [bool]$WslAttachAttempted,
         [bool]$VhdMountAttempted,
+        [string[]]$WslContextPrefix,
         [string]$LinuxMount,
         [string]$PhysicalDrive,
         [Parameter(Mandatory = $true)][string]$ResolvedVhd
@@ -146,7 +216,7 @@ if mountpoint -q -- "$1"; then
 fi
 '@
         try {
-            [void](Invoke-WslSystemScript -Script $unmountScript -Arguments @($LinuxMount) -Label 'ext4 unmount')
+            [void](Invoke-WslContextScript -ContextPrefix $WslContextPrefix -Script $unmountScript -Arguments @($LinuxMount) -Label 'ext4 unmount')
         }
         catch {
             [void]$errors.Add("ext4 unmount failed: $($_.Exception.Message)")
@@ -297,9 +367,10 @@ function Invoke-Recovery {
         [void](New-Item -ItemType Directory -Path $resolvedOutput)
     }
 
+    $wslContext = Resolve-WslInspectionContext
     $before = Get-VhdSnapshot -Path $resolvedVhd
     [void](Invoke-NativeChecked -FilePath 'wsl.exe' -Arguments @('--terminate', 'Ubuntu-E') -Label 'Ubuntu-E termination')
-    $beforeDevices = Invoke-WslSystemScript -Script 'lsblk -pnro NAME' -Label 'pre-attachment block inventory'
+    $beforeDevices = Invoke-WslContextScript -ContextPrefix $wslContext.Prefix -Script 'lsblk -pnro NAME' -Label 'pre-attachment block inventory'
 
     $diskImage = Get-DiskImage -ImagePath $resolvedVhd -ErrorAction Stop
     if ($diskImage.Attached) {
@@ -358,7 +429,7 @@ lsblk -pnro NAME,FSTYPE | while read -r name fstype rest; do
     printf '%s|%s\n' "$name" "$fstype"
 done
 '@
-        $deviceRows = Invoke-WslSystemScript -Script $listCommand -Label 'post-attachment block inventory'
+        $deviceRows = Invoke-WslContextScript -ContextPrefix $wslContext.Prefix -Script $listCommand -Label 'post-attachment block inventory'
         $candidates = @()
         foreach ($row in $deviceRows) {
             $separator = $row.IndexOf('|')
@@ -382,7 +453,7 @@ mkdir -p -- "$1"
 mount -t ext4 -o ro,noload -- "$2" "$1"
 '@
         $filesystemMountAttempted = $true
-        [void](Invoke-WslSystemScript -Script $mountCommand -Arguments @($linuxMount, $linuxDevice) -Label 'read-only ext4 mount')
+        [void](Invoke-WslContextScript -ContextPrefix $wslContext.Prefix -Script $mountCommand -Arguments @($linuxMount, $linuxDevice) -Label 'read-only ext4 mount')
 
         $proofCommand = @'
 set -eu
@@ -396,9 +467,9 @@ case ",$options," in
     *) exit 1 ;;
 esac
 '@
-        [void](Invoke-WslSystemScript -Script $proofCommand -Arguments @($linuxMount) -Label 'ext4 read-only mount proof')
+        [void](Invoke-WslContextScript -ContextPrefix $wslContext.Prefix -Script $proofCommand -Arguments @($linuxMount) -Label 'ext4 read-only mount proof')
 
-        $wslOutput = ConvertTo-WslPath -WindowsPath $resolvedOutput
+        $wslOutput = ConvertTo-WslPath -ContextPrefix $wslContext.Prefix -WindowsPath $resolvedOutput
         $copyCommand = @'
 set -eu
 test -f "$1/$2"
@@ -406,7 +477,7 @@ cp -- "$1/$2" "$3/$4"
 '@
         foreach ($relative in $requiredArtifacts) {
             $filename = $relative.Split('/')[-1]
-            [void](Invoke-WslSystemScript -Script $copyCommand -Arguments @($linuxMount, $relative, $wslOutput, $filename) -Label "artifact copy: $filename")
+            [void](Invoke-WslContextScript -ContextPrefix $wslContext.Prefix -Script $copyCommand -Arguments @($linuxMount, $relative, $wslOutput, $filename) -Label "artifact copy: $filename")
         }
 
         $packageRoot = "$linuxMount/.venv/lib/python3.12/site-packages"
@@ -437,7 +508,7 @@ fi
 '@
         foreach ($package in $packageSpecs) {
             $destination = "$wslOutput/package_metadata/$($package.slug)"
-            [void](Invoke-WslSystemScript -Script $packageCopyCommand -Arguments @($packageRoot, $package.normalized, $destination) -Label "package identity copy: $($package.slug)")
+            [void](Invoke-WslContextScript -ContextPrefix $wslContext.Prefix -Script $packageCopyCommand -Arguments @($packageRoot, $package.normalized, $destination) -Label "package identity copy: $($package.slug)")
         }
     }
     catch {
@@ -448,6 +519,7 @@ fi
             -FilesystemMountAttempted $filesystemMountAttempted `
             -WslAttachAttempted $wslAttachAttempted `
             -VhdMountAttempted $vhdMountAttempted `
+            -WslContextPrefix $wslContext.Prefix `
             -LinuxMount $linuxMount `
             -PhysicalDrive $physicalDrive `
             -ResolvedVhd $resolvedVhd)

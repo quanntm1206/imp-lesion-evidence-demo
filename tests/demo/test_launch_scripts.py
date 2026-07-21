@@ -61,6 +61,32 @@ def _run_recovery_function_harness(
     )
 
 
+WSL_INSPECTION_TOOLS = (
+    "sh",
+    "lsblk",
+    "mount",
+    "umount",
+    "cp",
+    "awk",
+    "wslpath",
+    "mountpoint",
+    "mkdir",
+    "sed",
+    "head",
+    "tr",
+    "dirname",
+)
+
+
+def _wsl_probe_lines(*, uid: int = 0, missing: tuple[str, ...] = ()) -> str:
+    lines = [f"'uid={uid}'"]
+    lines.extend(
+        f"'{('missing' if tool in missing else 'tool')}={tool}'"
+        for tool in WSL_INSPECTION_TOOLS
+    )
+    return "@(" + ",".join(lines) + ")"
+
+
 def _fake_python(
     tmp_path: Path, *, capture_environment: bool = False
 ) -> Path:
@@ -282,8 +308,9 @@ def test_recovery_script_uses_only_the_exact_vhd_environment_metadata() -> None:
 def test_recovery_wsl_path_keeps_single_line_as_string() -> None:
     result = _run_recovery_function_harness(
         ("ConvertTo-WslPath",),
-        "function Invoke-WslSystem { '/mnt/e/path with spaces' }; "
-        "$value=ConvertTo-WslPath -WindowsPath 'E:\\path with spaces'; "
+        "function Invoke-WslContext { '/mnt/e/path with spaces' }; "
+        "$value=ConvertTo-WslPath -ContextPrefix @('--system','--') "
+        "-WindowsPath 'E:\\path with spaces'; "
         "[pscustomobject]@{type=$value.GetType().FullName;value=$value} | "
         "ConvertTo-Json -Compress",
     )
@@ -299,7 +326,7 @@ def test_recovery_cleanup_attempts_every_layer_after_partial_failures() -> None:
     result = _run_recovery_function_harness(
         ("Invoke-RecoveryCleanup",),
         "$script:calls=New-Object 'System.Collections.Generic.List[string]'; "
-        "function Invoke-WslSystemScript { $script:calls.Add('filesystem'); "
+        "function Invoke-WslContextScript { $script:calls.Add('filesystem'); "
         "throw 'filesystem cleanup failed' }; "
         "function global:wsl.exe { $script:calls.Add('wsl'); "
         "$global:LASTEXITCODE=9; 'not attached' }; "
@@ -308,6 +335,7 @@ def test_recovery_cleanup_attempts_every_layer_after_partial_failures() -> None:
         "function Dismount-VHD { $script:calls.Add('vhd') }; "
         "$cleanup=@(Invoke-RecoveryCleanup -FilesystemMountAttempted $true "
         "-WslAttachAttempted $true -VhdMountAttempted $true "
+        "-WslContextPrefix @('--system','--') "
         "-LinuxMount '/mnt/wsl/recovery' -PhysicalDrive '\\\\.\\PHYSICALDRIVE9' "
         "-ResolvedVhd 'E:\\source.vhdx'); "
         "[pscustomobject]@{calls=@($script:calls);errors=$cleanup} | "
@@ -334,6 +362,121 @@ def test_recovery_preserves_operation_and_cleanup_failures() -> None:
     assert result.returncode == 0, result.stderr
     assert "primary failure" in result.stdout
     assert "secondary failure" in result.stdout
+
+
+def test_recovery_prefers_available_system_context() -> None:
+    result = _run_recovery_function_harness(
+        ("Resolve-WslInspectionContext",),
+        "$script:calls=New-Object 'System.Collections.Generic.List[string]'; "
+        "function Invoke-WslContextScript { param($ContextPrefix,$Script,$Arguments,$Label) "
+        "$script:calls.Add(($ContextPrefix -join ' ')); "
+        + _wsl_probe_lines()
+        + " }; $context=Resolve-WslInspectionContext; "
+        "[pscustomobject]@{name=$context.Name;prefix=@($context.Prefix);"
+        "calls=@($script:calls)} | ConvertTo-Json -Depth 4 -Compress",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout.strip()) == {
+        "name": "system",
+        "prefix": ["--system", "--"],
+        "calls": ["--system --"],
+    }
+
+
+def test_recovery_uses_validated_docker_desktop_when_system_fails() -> None:
+    result = _run_recovery_function_harness(
+        ("Resolve-WslInspectionContext",),
+        "$script:calls=New-Object 'System.Collections.Generic.List[string]'; "
+        "function Invoke-WslContextScript { param($ContextPrefix,$Script,$Arguments,$Label) "
+        "$key=$ContextPrefix -join ' '; $script:calls.Add($key); "
+        "if($key -eq '--system --'){throw 'system unavailable'}; "
+        + _wsl_probe_lines()
+        + " }; $context=Resolve-WslInspectionContext; "
+        "[pscustomobject]@{name=$context.Name;prefix=@($context.Prefix);"
+        "calls=@($script:calls)} | ConvertTo-Json -Depth 4 -Compress",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout.strip()) == {
+        "name": "docker-desktop",
+        "prefix": ["-d", "docker-desktop", "-u", "root", "--"],
+        "calls": ["--system --", "-d docker-desktop -u root --"],
+    }
+
+
+@pytest.mark.parametrize(
+    ("fallback_lines", "expected"),
+    [
+        (_wsl_probe_lines(uid=1000), "uid 0"),
+        (_wsl_probe_lines(missing=("awk",)), "required commands"),
+    ],
+)
+def test_recovery_rejects_invalid_docker_desktop_fallback(
+    fallback_lines: str, expected: str
+) -> None:
+    result = _run_recovery_function_harness(
+        ("Resolve-WslInspectionContext",),
+        "function Invoke-WslContextScript { param($ContextPrefix,$Script,$Arguments,$Label) "
+        "if(($ContextPrefix -join ' ') -eq '--system --'){throw 'system unavailable'}; "
+        + fallback_lines
+        + " }; Resolve-WslInspectionContext",
+    )
+
+    assert result.returncode != 0
+    assert expected in result.stderr
+
+
+def test_recovery_rejects_unavailable_fallback() -> None:
+    result = _run_recovery_function_harness(
+        ("Resolve-WslInspectionContext",),
+        "function Invoke-WslContextScript { throw (($ContextPrefix -join ' ') + "
+        "' unavailable') }; Resolve-WslInspectionContext",
+    )
+
+    assert result.returncode != 0
+    assert "system" in result.stderr
+    assert "docker-desktop" in result.stderr
+
+
+def test_recovery_routes_linux_commands_through_locked_context() -> None:
+    script = _read("scripts/demo/recover_nnunet_artifacts.ps1")
+
+    system = "@('--system', '--')"
+    fallback = "@('-d', 'docker-desktop', '-u', 'root', '--')"
+    assert system in script and fallback in script
+    assert script.index(system) < script.index(fallback)
+    assert "Resolve-WslInspectionContext" in script
+    assert "Invoke-WslSystem" not in script
+    assert "Invoke-WslSystemScript" not in script
+    assert "wsl.exe --shutdown" not in script
+    for token in (
+        "pre-attachment block inventory",
+        "post-attachment block inventory",
+        "read-only ext4 mount",
+        "ext4 read-only mount proof",
+        "artifact copy:",
+        "package identity copy:",
+        "output path conversion",
+        "ext4 unmount",
+    ):
+        position = script.index(token)
+        nearby = script[max(0, position - 220) : position + 220]
+        assert "ContextPrefix" in nearby
+
+
+def test_recovery_design_documents_locked_inspection_fallback() -> None:
+    design = _read("docs/superpowers/specs/2026-07-21-dual-live-demo-design.md").lower()
+
+    for token in (
+        "system distribution",
+        "preferred",
+        "`docker-desktop`",
+        "root-only",
+        "fallback",
+        "preflight",
+    ):
+        assert token in design
 
 
 def test_recovery_marks_attempts_before_mutating_commands() -> None:

@@ -104,9 +104,12 @@ immutable source and does not attempt distro repair:
    status, and the VHD file timestamps before attachment.
 2. Stop the distribution before attachment. Never unregister, reset, compact,
    resize, overwrite, import in place, or delete the source distro or VHD.
-3. Attach the source VHD at the Windows layer read-only, expose it bare to the
-   WSL system distribution, then mount the ext4 filesystem with `ro,noload`.
-   Abort if either read-only property cannot be proved before file access.
+3. Attach the source VHD at the Windows layer read-only and expose it bare. The
+   WSL system distribution is the preferred inspection context. Only when that
+   context is unavailable may the exact `docker-desktop` root-only fallback be
+   used, after a preflight proves UID 0 and every required command. Mount the
+   ext4 filesystem with `ro,noload`; abort if either read-only property cannot
+   be proved before file access.
 4. Copy only the Loop192 checkpoint, plans, fingerprint, dataset metadata,
    trainer metadata, prediction metadata, and environment lock data into a new
    extraction directory. Do not execute binaries or import Python modules from
