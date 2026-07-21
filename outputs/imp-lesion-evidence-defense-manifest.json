@@ -1,0 +1,22 @@
+{
+    "schema":  "imp.presentation.delivery/v1",
+    "slide_count":  12,
+    "generated_utc":  "2026-07-21T06:00:46Z",
+    "files":  [
+                  {
+                      "path":  "outputs/imp-lesion-evidence-defense.html",
+                      "bytes":  539722,
+                      "sha256":  "e5d25d8d7b9ec37505e8ee3d26e20a55a2dbe953847e453bf9d8046b2f0d040e"
+                  },
+                  {
+                      "path":  "outputs/imp-lesion-evidence-defense.pdf",
+                      "bytes":  421499,
+                      "sha256":  "08f6a02c1ae9893693220535368dd46b15b56572aa577b2b4a9daa1ff4c252d9"
+                  },
+                  {
+                      "path":  "outputs/imp-lesion-evidence-defense.pptx",
+                      "bytes":  409946,
+                      "sha256":  "f19de50ecb4013011613fbae02e7082710a9f70d2f6d2d932c31524d82b0989a"
+                  }
+              ]
+}

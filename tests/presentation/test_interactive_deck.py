@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -127,3 +128,26 @@ def test_html_has_no_network_runtime_dependencies() -> None:
 def test_final_pptx_exists_and_is_nontrivial() -> None:
     assert PPTX.exists()
     assert PPTX.stat().st_size > 100_000
+
+
+def test_portable_html_is_self_contained() -> None:
+    html = PORTABLE_HTML.read_text(encoding="utf-8")
+    assert html.startswith("<!doctype html>")
+    assert 'data:application/json;base64,' in html
+    assert 'data:image/png;base64,' in html
+    assert not re.search(r'(?:src|href)="(?:presentation/|assets/)', html)
+
+
+def test_delivery_manifest_binds_outputs() -> None:
+    receipt = json.loads(DELIVERY_MANIFEST.read_text(encoding="utf-8"))
+    assert receipt["schema"] == "imp.presentation.delivery/v1"
+    assert receipt["slide_count"] == 12
+    assert {entry["path"] for entry in receipt["files"]} == {
+        "outputs/imp-lesion-evidence-defense.html",
+        "outputs/imp-lesion-evidence-defense.pdf",
+        "outputs/imp-lesion-evidence-defense.pptx",
+    }
+    for entry in receipt["files"]:
+        output = ROOT / entry["path"]
+        assert output.stat().st_size == entry["bytes"]
+        assert _sha256(output) == entry["sha256"]

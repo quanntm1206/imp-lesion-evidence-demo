@@ -360,8 +360,8 @@ function addModelsSlide(data, index) {
 
 function addValidationSlide(data, index) {
   const slide = presentation.slides.add();
-  addChrome(slide, data, index);
-  addClaim(slide, data, 150, 1070);
+  addChrome(slide, data, index, C.teal, { titleFontSize: 35, titleHeight: 98 });
+  addClaim(slide, data, 178, 1070);
   const rows = [
     { name: "Robust Dice", a: 0.8959, b: 0.9019, y: 320 },
     { name: "Boundary F1", a: 0.4145, b: 0.4369, y: 466 },
