@@ -325,6 +325,95 @@ def test_recovery_isolates_7zip_from_shell_script_stdin() -> None:
     assert command + " >/tmp/7zip.stdout 2>/tmp/7zip.stderr" not in script
 
 
+def _run_trusted_python(path: Path) -> subprocess.CompletedProcess[str]:
+    return _run_recovery_function_harness(
+        ("Resolve-TrustedPython",),
+        f"Resolve-TrustedPython -ExplicitPath '{_powershell_literal(path)}'",
+    )
+
+
+def test_recovery_accepts_explicit_trusted_python(tmp_path: Path) -> None:
+    python_exe = tmp_path / "python.exe"
+    python_exe.write_text("trusted", encoding="ascii")
+
+    result = _run_trusted_python(python_exe)
+
+    assert result.returncode == 0, result.stderr
+    assert os.path.normcase(result.stdout.strip()) == os.path.normcase(
+        str(python_exe.resolve())
+    )
+
+
+def test_recovery_rejects_missing_trusted_python(tmp_path: Path) -> None:
+    result = _run_trusted_python(tmp_path / "python.exe")
+
+    assert result.returncode != 0
+    assert "trusted Python executable unavailable" in result.stderr
+
+
+def test_recovery_rejects_reparse_trusted_python(tmp_path: Path) -> None:
+    python_exe = tmp_path / "python.exe"
+    python_exe.write_text("reparse", encoding="ascii")
+    path = _powershell_literal(python_exe)
+    result = _run_recovery_function_harness(
+        ("Resolve-TrustedPython",),
+        "function Get-Item { [pscustomobject]@{PSIsContainer=$false;"
+        "Attributes=[IO.FileAttributes]::ReparsePoint} }; "
+        f"Resolve-TrustedPython -ExplicitPath '{path}'",
+    )
+
+    assert result.returncode != 0
+    assert "must not be a reparse point" in result.stderr
+
+
+def test_recovery_rejects_non_python_executable(tmp_path: Path) -> None:
+    executable = tmp_path / "python3.exe"
+    executable.write_text("wrong name", encoding="ascii")
+
+    result = _run_trusted_python(executable)
+
+    assert result.returncode != 0
+    assert "filename must be exactly python.exe" in result.stderr
+
+
+def test_recovery_python_parameter_wires_both_verifiers_after_safety_checks() -> None:
+    script = _read("scripts/demo/recover_nnunet_artifacts.ps1")
+    container = script[
+        script.index("function Invoke-ContainerRecovery") : script.index(
+            "function Invoke-WindowsAttachRecovery"
+        )
+    ]
+    windows = script[
+        script.index("function Invoke-WindowsAttachRecovery") : script.index(
+            "function Invoke-AutomaticRecovery"
+        )
+    ]
+
+    assert script.index("[string]$PythonExe = ''") < script.index("Set-StrictMode")
+    assert script.count("Resolve-TrustedPython -ExplicitPath $PythonExe") == 2
+    assert script.count("| & $trustedPython -c $verifierCode") == 2
+    assert container.index(
+        "Assert-ExactRecoveryFiles -Root $resolvedOutput -Expected $rawNames"
+    ) < container.index("Resolve-TrustedPython -ExplicitPath $PythonExe")
+    assert windows.index(
+        "Assert-SnapshotUnchanged -Before $before -After $after"
+    ) < windows.index("Resolve-TrustedPython -ExplicitPath $PythonExe")
+    resolver = script[
+        script.index("function Resolve-TrustedPython") : script.index(
+            "function Get-VhdSnapshot"
+        )
+    ]
+    assert "Get-Command" not in resolver
+    assert script.count(".venv-win\\Scripts\\python.exe") == 1
+
+
+def test_recovery_plan_passes_explicit_trusted_python() -> None:
+    plan = _read("docs/superpowers/plans/2026-07-21-dual-live-demo.md")
+    argument = "-PythonExe 'E:\\0. IMP\\.venv-win\\Scripts\\python.exe'"
+
+    assert plan.count(argument) >= 2
+
+
 def test_recovery_container_arguments_lock_mounts_and_image() -> None:
     result = _run_recovery_function_harness(
         ("New-ContainerRecoveryArguments",),

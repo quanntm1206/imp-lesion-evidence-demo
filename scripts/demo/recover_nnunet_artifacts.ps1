@@ -10,7 +10,9 @@ param(
 
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
-    [string]$OutputRoot
+    [string]$OutputRoot,
+
+    [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
@@ -45,6 +47,40 @@ function Resolve-ExplicitFile {
     }
     if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
         throw "$Label must not be a reparse point"
+    }
+    return $resolvedPath
+}
+
+function Resolve-TrustedPython {
+    param([string]$ExplicitPath = '')
+
+    if ($ExplicitPath) {
+        $candidate = $ExplicitPath
+    }
+    else {
+        $repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+        $candidate = Join-Path $repoRoot '.venv-win\Scripts\python.exe'
+    }
+
+    $fullPath = [IO.Path]::GetFullPath($candidate)
+    try {
+        $resolvedPath = (Resolve-Path -LiteralPath $candidate -ErrorAction Stop).ProviderPath
+    }
+    catch {
+        throw 'trusted Python executable unavailable'
+    }
+    if (-not [string]::Equals($fullPath, $resolvedPath, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'trusted Python resolved path differs from explicit input'
+    }
+    $item = Get-Item -LiteralPath $resolvedPath -Force -ErrorAction Stop
+    if ($item.PSIsContainer) {
+        throw 'trusted Python executable must be a file'
+    }
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'trusted Python executable must not be a reparse point'
+    }
+    if ([IO.Path]::GetFileName($resolvedPath) -cne 'python.exe') {
+        throw 'trusted Python executable filename must be exactly python.exe'
     }
     return $resolvedPath
 }
@@ -598,8 +634,6 @@ exit 0
         provenance = $sourceReport.provenance
         source_vhd_proof = [ordered]@{ before = $before; after = $after }
     }
-    $repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-    $pythonExe = Join-Path $repoRoot '.venv-win\Scripts\python.exe'
     $verifierPath = Join-Path $PSScriptRoot 'verify_nnunet_bundle.py'
     $receiptPath = Join-Path $resolvedOutput 'recovery_receipt.json'
     $verifierCode = @'
@@ -616,7 +650,8 @@ receipt = module.verify_bundle(Path(sys.argv[2]), json.loads(sys.stdin.read()))
 receipt.update(recovery_backend="container-readonly-7zip", parser_warning="Headers Error", runtime_status="reconstructed_required")
 Path(sys.argv[3]).write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 '@
-    ($verificationReport | ConvertTo-Json -Depth 8 -Compress) | & $pythonExe -c $verifierCode $verifierPath $resolvedOutput $receiptPath
+    $trustedPython = Resolve-TrustedPython -ExplicitPath $PythonExe
+    ($verificationReport | ConvertTo-Json -Depth 8 -Compress) | & $trustedPython -c $verifierCode $verifierPath $resolvedOutput $receiptPath
     if ($LASTEXITCODE -ne 0) {
         throw "Loop192 bundle verification failed with exit code $LASTEXITCODE"
     }
@@ -830,13 +865,8 @@ fi
     }
     $verificationJson = $verificationReport | ConvertTo-Json -Depth 8 -Compress
 
-    $repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-    $pythonExe = Join-Path $repoRoot '.venv-win\Scripts\python.exe'
     $verifierPath = Join-Path $PSScriptRoot 'verify_nnunet_bundle.py'
     $receiptPath = Join-Path $resolvedOutput 'recovery_receipt.json'
-    if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
-        throw 'trusted Python executable unavailable'
-    }
     $verifierCode = @'
 import importlib.util
 import json
@@ -852,7 +882,8 @@ report = json.loads(sys.stdin.read())
 receipt = module.verify_bundle(Path(sys.argv[2]), report)
 Path(sys.argv[3]).write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 '@
-    $verificationJson | & $pythonExe -c $verifierCode $verifierPath $resolvedOutput $receiptPath
+    $trustedPython = Resolve-TrustedPython -ExplicitPath $PythonExe
+    $verificationJson | & $trustedPython -c $verifierCode $verifierPath $resolvedOutput $receiptPath
     if ($LASTEXITCODE -ne 0) {
         throw "Loop192 bundle verification failed with exit code $LASTEXITCODE"
     }

@@ -146,7 +146,7 @@ git commit -m "test: lock read-only nnunet recovery"
 - Create operator-local, Git-ignored: `demo_runtime/nnunet/recovered/*`
 
 **Interfaces:**
-- Consumes: `-VhdPath`, `-ReportPath`, `-OutputRoot`, administrator token.
+- Consumes: `-VhdPath`, `-ReportPath`, `-OutputRoot`, optional explicit `-PythonExe`, administrator token.
 - Produces: verified artifact bundle plus `recovery_receipt.json`; returns `0` only after detach and unchanged source metadata checks.
 
 - [ ] **Step 1: Add static safety tests**
@@ -192,7 +192,7 @@ Run: `powershell -NoProfile -Command "$errors=$null; [void][Management.Automatio
 
 Expected: exit `0`.
 
-Run without elevation: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/recover_nnunet_artifacts.ps1 -VhdPath 'E:\WSL\Ubuntu-E\ext4.vhdx' -ReportPath 'E:\0. IMP\.artifacts\preprocessing_search\current_bdou_loop192_nnunet_clean_v3_report.json' -OutputRoot 'E:\0. IMP\.worktrees\dual-live-demo\demo_runtime\nnunet\recovered'`
+Run without elevation: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/recover_nnunet_artifacts.ps1 -PythonExe 'E:\0. IMP\.venv-win\Scripts\python.exe' -VhdPath 'E:\WSL\Ubuntu-E\ext4.vhdx' -ReportPath 'E:\0. IMP\.artifacts\preprocessing_search\current_bdou_loop192_nnunet_clean_v3_report.json' -OutputRoot 'E:\0. IMP\.worktrees\dual-live-demo\demo_runtime\nnunet\recovered'`
 
 Expected: nonzero before any mount, message `Administrator token required`; no source metadata change.
 
@@ -202,6 +202,7 @@ Run from an elevated PowerShell window:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/recover_nnunet_artifacts.ps1 `
+  -PythonExe 'E:\0. IMP\.venv-win\Scripts\python.exe' `
   -VhdPath 'E:\WSL\Ubuntu-E\ext4.vhdx' `
   -ReportPath 'E:\0. IMP\.artifacts\preprocessing_search\current_bdou_loop192_nnunet_clean_v3_report.json' `
   -OutputRoot 'E:\0. IMP\.worktrees\dual-live-demo\demo_runtime\nnunet\recovered'
