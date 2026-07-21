@@ -148,6 +148,8 @@ def _resolve_receipt_path(bundle: Path, receipt: Path) -> Path:
         raise ValueError("receipt parent must equal resolved bundle") from error
     if parent != bundle:
         raise ValueError("receipt parent must equal resolved bundle")
+    if receipt.name != "recovery_receipt.json":
+        raise ValueError("receipt basename must be exactly recovery_receipt.json")
     resolved = parent / receipt.name
     try:
         info = resolved.lstat()
@@ -155,9 +157,7 @@ def _resolve_receipt_path(bundle: Path, receipt: Path) -> Path:
         return resolved
     if _is_reparse(info):
         raise ValueError("receipt must not be a reparse point")
-    if not stat.S_ISREG(info.st_mode):
-        raise ValueError("receipt must be a regular file")
-    return resolved
+    raise ValueError("receipt must not already exist")
 
 
 def _write_receipt_atomic(path: Path, receipt: Mapping[str, Any]) -> None:
@@ -178,7 +178,10 @@ def _write_receipt_atomic(path: Path, receipt: Mapping[str, Any]) -> None:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        try:
+            os.link(temporary, path)
+        except FileExistsError as error:
+            raise ValueError("receipt must not already exist") from error
     finally:
         temporary.unlink(missing_ok=True)
 

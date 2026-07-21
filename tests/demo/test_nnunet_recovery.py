@@ -194,14 +194,14 @@ def test_bundle_verifier_cli_writes_atomic_sorted_receipt(
         parser_warning="Headers Error",
         runtime_status="reconstructed_required",
     )
-    replace_calls: list[tuple[Path, Path]] = []
-    real_replace = os.replace
+    link_calls: list[tuple[Path, Path]] = []
+    real_link = os.link
 
-    def observed_replace(source, destination) -> None:
-        replace_calls.append((Path(source), Path(destination)))
-        real_replace(source, destination)
+    def observed_link(source, destination) -> None:
+        link_calls.append((Path(source), Path(destination)))
+        real_link(source, destination)
 
-    monkeypatch.setattr(os, "replace", observed_replace)
+    monkeypatch.setattr(os, "link", observed_link)
 
     result = verifier.main(
         [
@@ -215,8 +215,8 @@ def test_bundle_verifier_cli_writes_atomic_sorted_receipt(
     )
 
     assert result == 0
-    assert len(replace_calls) == 1
-    temporary, destination = replace_calls[0]
+    assert len(link_calls) == 1
+    temporary, destination = link_calls[0]
     assert temporary.parent.resolve() == bundle.resolve()
     assert destination.resolve() == receipt_path.resolve()
     assert not temporary.exists()
@@ -263,6 +263,65 @@ def test_bundle_verifier_cli_rejects_receipt_outside_bundle(tmp_path: Path) -> N
                 str(tmp_path / "outside-receipt.json"),
             ]
         )
+
+
+@pytest.mark.parametrize(
+    "artifact_name",
+    ["checkpoint_final.pth", "nnUNetPlans.json", "runtime_identity.json"],
+)
+def test_bundle_verifier_cli_never_overwrites_bundle_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    artifact_name: str,
+) -> None:
+    bundle, report = fake_loop192_bundle(tmp_path)
+    _allow_fake_pins(monkeypatch, report)
+    report_path = bundle / ".verification-report.json"
+    report_path.write_text(json.dumps(report), encoding="ascii")
+    artifact_path = bundle / artifact_name
+    before = artifact_path.read_bytes()
+
+    with pytest.raises(
+        ValueError, match="receipt basename must be exactly recovery_receipt.json"
+    ):
+        verifier.main(
+            [
+                "--bundle",
+                str(bundle),
+                "--report",
+                str(report_path),
+                "--receipt",
+                str(artifact_path),
+            ]
+        )
+
+    assert artifact_path.read_bytes() == before
+
+
+def test_bundle_verifier_cli_rejects_existing_exact_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundle, report = fake_loop192_bundle(tmp_path)
+    _allow_fake_pins(monkeypatch, report)
+    report_path = bundle / ".verification-report.json"
+    report_path.write_text(json.dumps(report), encoding="ascii")
+    receipt_path = bundle / "recovery_receipt.json"
+    before = b"preserve-existing-receipt"
+    receipt_path.write_bytes(before)
+
+    with pytest.raises(ValueError, match="receipt must not already exist"):
+        verifier.main(
+            [
+                "--bundle",
+                str(bundle),
+                "--report",
+                str(report_path),
+                "--receipt",
+                str(receipt_path),
+            ]
+        )
+
+    assert receipt_path.read_bytes() == before
 
 
 def test_bundle_verifier_cli_reads_report_from_stdin(
