@@ -4,13 +4,13 @@
 
 **Goal:** Serve one guarded Gradio URL that performs sequential live IMP and hash-pinned nnU-Net v2 inference on the same image, renders both outputs, and emits a path-free evidence receipt.
 
-**Architecture:** The Windows Gradio host owns validation, IMP inference, presentation, receipts, and a single-worker queue on `127.0.0.1:7860`. A fresh Docker/WSL2 nnU-Net sidecar owns the recovered Loop192 model on `127.0.0.1:7862`; the original damaged `Ubuntu-E` VHD is attached only read-only for artifact extraction, never used at runtime. A versioned localhost JSON protocol carries a lossless RGB PNG plus hash bindings; all failures clear stale outputs and fail closed.
+**Architecture:** The Windows Gradio host owns validation, IMP inference, presentation, receipts, and a single-worker queue on `127.0.0.1:7860`. A fresh Docker/WSL2 nnU-Net sidecar owns the recovered Loop192 model; its container listener uses `0.0.0.0:7862` only inside the isolated container namespace and Docker publishes it exactly as host `127.0.0.1:7862`. The original damaged `Ubuntu-E` VHD is attached only read-only for artifact extraction, never used at runtime. A versioned localhost JSON protocol carries a lossless RGB PNG plus hash bindings; all failures clear stale outputs and fail closed.
 
 **Tech Stack:** Python 3.12, NumPy, Pillow, Gradio 5/6, stdlib HTTP/JSON, PyTorch CUDA, nnU-Net v2, Docker Desktop/WSL2, PowerShell 7/Windows PowerShell, pytest, Cloudflare Quick Tunnel.
 
 ## Global Constraints
 
-- Bind Gradio to `127.0.0.1:7860`; bind sidecar to `127.0.0.1:7862`; expose only Gradio through Cloudflare.
+- Bind Gradio to `127.0.0.1:7860`. Direct sidecar runs bind `127.0.0.1:7862`; container runs bind `0.0.0.0:7862` only inside the container and MUST publish exactly `127.0.0.1:7862:7862`. Expose only Gradio through Cloudflare.
 - Admit one request at a time. Run IMP first, nnU-Net second. No parallel GPU inference.
 - Accept at most 16 MiB encoded input and 16,000,000 decoded pixels; normalize to contiguous RGB `uint8` exactly once.
 - Arbitrary uploads show no Dice, BF1, IoU, HD95, ASSD, superiority, significance, protected-test, clinical, or SOTA claim.
@@ -37,7 +37,7 @@
 - `sidecar/nnunet/predictor.py`: persistent `nnUNetPredictor` adapter for one RGB image.
 - `sidecar/nnunet/server.py`: localhost HTTP health/predict server with request limits and sanitized failures.
 - `sidecar/nnunet/Dockerfile`: fresh pinned CUDA runtime; no dependency on damaged distro.
-- `sidecar/nnunet/requirements.lock`: exact Python package pins recovered from Loop192 metadata.
+- `sidecar/nnunet/requirements.lock`: full reconstructed transitive pins generated inside the digest-pinned CUDA base; explicitly not the unavailable original environment.
 - `sidecar/nnunet/model_manifest.example.json`: public schema plus immutable expected hashes; private artifact paths remain operator-local.
 - `scripts/demo/verify_nnunet_bundle.py`: extraction verifier and path-free recovery receipt generator.
 - `scripts/demo/recover_nnunet_artifacts.ps1`: administrator-only read-only VHD attachment/extraction/detachment.
@@ -184,7 +184,7 @@ $Required = @(
 )
 ```
 
-Also recover package identities from `.venv/lib/python3.12/site-packages/*.dist-info/METADATA`, `direct_url.json`, and `RECORD` for `nnunetv2`, `torch`, `dynamic-network-architectures`, `batchgenerators`, `batchgeneratorsv2`, `numpy`, `scipy`, `SimpleITK`, and `acvl-utils`. Generate `runtime_identity.json` and exact `requirements.lock`; never execute recovered code.
+Also recover package identities from `.venv/lib/python3.12/site-packages/*.dist-info/METADATA`, `direct_url.json`, and `RECORD` for `nnunetv2`, `torch`, `dynamic-network-architectures`, `batchgenerators`, `batchgeneratorsv2`, `numpy`, `scipy`, `SimpleITK`, and `acvl-utils`. Generate `runtime_identity.json` plus a provisional recovery marker that states the original transitive lock is unavailable and reconstruction is required; never execute recovered code.
 
 - [ ] **Step 4: Parse-check and dry-run the script**
 
@@ -294,7 +294,7 @@ git commit -m "feat: define dual-live sidecar protocol"
 - Create: `sidecar/nnunet/server.py`
 - Create: `sidecar/nnunet/Dockerfile`
 - Create: `sidecar/nnunet/model_manifest.example.json`
-- Create from recovered metadata: `sidecar/nnunet/requirements.lock`
+- Create from the pinned base/runtime: `sidecar/nnunet/requirements.lock` (full reconstructed transitive lock, not the original environment)
 - Create: `tests/demo/test_nnunet_sidecar.py`
 
 **Interfaces:**
@@ -353,11 +353,11 @@ The recovered package identity test must assert the runtime's actual `nnUNetPred
 
 - [ ] **Step 4: Implement the loopback server**
 
-Use `ThreadingHTTPServer(("127.0.0.1", 7862), Handler)` but guard prediction with one `Lock`. Set `Content-Length` limit before reading. Return only sanitized codes: `invalid_request`, `busy`, `oom`, `inference_failed`, `artifact_drift`. `/health` returns protocol, model ID, checkpoint hash, device, readiness, and no paths.
+Default/direct execution uses `ThreadingHTTPServer(("127.0.0.1", 7862), Handler)`. Explicit container execution may use `0.0.0.0:7862` only inside the container namespace, paired with the exact host publication `127.0.0.1:7862:7862`; reject every other bind host. Guard prediction with one `Lock`. Set `Content-Length` limit before reading. Return only sanitized codes: `invalid_request`, `busy`, `oom`, `inference_failed`, `artifact_drift`. `/health` returns protocol, model ID, checkpoint hash, device, readiness, and no paths.
 
 - [ ] **Step 5: Build the pinned container**
 
-Copy the exact recovered `requirements.lock`; fail build if it contains editable, local-path, VCS, or unpinned entries. Mount artifacts read-only at `/models/loop192`; publish `127.0.0.1:7862:7862`; request one GPU; set `PYTHONHASHSEED=0`, `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, and `nnUNet_compile=false`.
+Use `pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime@sha256:eee11b3b3872a8c838e35ef48f08b2d5def2080902c7f666831310ca1a0ef2be`. Install `nnunetv2==2.8.1` inside that base and commit its full transitive `pip list --format=freeze` result as a clearly labeled reconstructed lock. Fail the build if the lock contains editable, local-path, VCS, or unpinned entries. Mount artifacts read-only at `/models/loop192`; publish `127.0.0.1:7862:7862`; request one GPU; set `PYTHONHASHSEED=0`, `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, and `nnUNet_compile=false`. Do not claim equivalence to the unavailable original environment; checkpoint initialization and recorded-output replay remain acceptance gates.
 
 - [ ] **Step 6: Run unit tests and container identity probe**
 
@@ -365,7 +365,7 @@ Run: `.venv-win\Scripts\python.exe -m pytest tests/demo/test_nnunet_sidecar.py -
 
 Expected: PASS.
 
-Run: `docker build -t imp-nnunet-sidecar:loop192 sidecar/nnunet`
+Run: `docker build -t imp-nnunet-sidecar:loop192 -f sidecar/nnunet/Dockerfile .`
 
 Run: `docker run --rm --gpus all imp-nnunet-sidecar:loop192 python -c "import json,inspect,torch; from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor; print(json.dumps({'cuda':torch.cuda.is_available(),'init':str(inspect.signature(nnUNetPredictor.initialize_from_trained_model_folder)),'single':str(inspect.signature(nnUNetPredictor.predict_single_npy_array))}))"`
 

@@ -4,7 +4,9 @@ from contextlib import contextmanager
 import hashlib
 import http.client
 import json
+import os
 from pathlib import Path
+import re
 import threading
 from typing import Iterator
 
@@ -147,6 +149,19 @@ def test_health_is_path_free_and_bound_to_loopback_identity() -> None:
     serialized = json.dumps(response).lower()
     assert "/models" not in serialized
     assert "checkpoint_final.pth" not in serialized
+
+
+def test_container_listener_requires_an_explicit_allowlisted_host() -> None:
+    backend = FakePredictor(np.zeros((3, 4), dtype=np.uint8))
+
+    container_server = make_server(backend, port=0, host="0.0.0.0")
+    try:
+        assert container_server.server_address[0] == "0.0.0.0"
+    finally:
+        container_server.server_close()
+
+    with pytest.raises(ValueError, match="invalid_bind_host"):
+        make_server(backend, port=0, host="192.168.1.20")
 
 
 def test_invalid_json_and_oversized_content_length_fail_before_inference() -> None:
@@ -328,15 +343,21 @@ def test_predictor_verifies_artifacts_before_loading_runtime(tmp_path: Path) -> 
 
 
 def test_predictor_initializes_once_and_uses_natural_image_contract(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     bundle, manifest = _write_bundle_and_manifest(tmp_path)
     fake_torch = FakeTorch()
     FakeNnUNetPredictor.instances.clear()
+    monkeypatch.delenv("nnUNet_results", raising=False)
+
+    def load_runtime() -> tuple[FakeTorch, type[FakeNnUNetPredictor], str]:
+        assert os.environ["nnUNet_results"] == str(bundle.resolve())
+        return fake_torch, FakeNnUNetPredictor, "2.8.1"
+
     predictor = Loop192Predictor(
         bundle,
         manifest,
-        runtime_loader=lambda: (fake_torch, FakeNnUNetPredictor, "2.8.1"),
+        runtime_loader=load_runtime,
     )
     image = rgb(5, 7)
 
@@ -359,3 +380,77 @@ def test_predictor_initializes_once_and_uses_natural_image_contract(
     assert latency >= 0.0
     assert fake_torch.cuda.synchronizations == 4
 
+
+def test_public_manifest_pins_recovered_bundle_without_private_paths() -> None:
+    sidecar_root = Path(__file__).parents[2] / "sidecar" / "nnunet"
+    manifest = json.loads(
+        (sidecar_root / "model_manifest.example.json").read_text(encoding="utf-8")
+    )
+
+    assert manifest["runtime"] == {
+        "distribution": "nnunetv2",
+        "version": "2.8.1",
+        "recovered_git_commit": "3e9fdc5fec7c8164f8fc2c6263af8be73278130e",
+        "environment_status": "reconstructed",
+    }
+    assert manifest["artifacts"] == {
+        "checkpoint_final.pth": {
+            "sha256": CHECKPOINT_SHA256,
+            "size": 267947879,
+        },
+        "plans.json": {
+            "sha256": "b60e4defd229b03f7064dc5b66123545c91cdaa44c09d990b86690a94e1e08a7",
+            "size": 6379,
+        },
+        "dataset.json": {
+            "sha256": "eb33bcbad9d8d5c96168b3c12171392ffabf63ba4cbff4f2bf4badc98bf6487a",
+            "size": 183,
+        },
+        "dataset_fingerprint.json": {
+            "sha256": "931da8aae52ffecd726d5928009ebdcae7002e24b035fad89177e0bc81dba85c",
+            "size": 274020,
+        },
+    }
+    assert "private" not in json.dumps(manifest).lower()
+    assert ":\\" not in json.dumps(manifest)
+
+
+def test_container_uses_digest_pinned_cuda_base() -> None:
+    sidecar_root = Path(__file__).parents[2] / "sidecar" / "nnunet"
+    dockerfile = (sidecar_root / "Dockerfile").read_text(encoding="utf-8")
+    plan = (
+        Path(__file__).parents[2]
+        / "docs"
+        / "superpowers"
+        / "plans"
+        / "2026-07-21-dual-live-demo.md"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime@"
+        "sha256:eee11b3b3872a8c838e35ef48f08b2d5def2080902c7f666831310ca1a0ef2be"
+    ) in dockerfile
+    assert "--break-system-packages" in dockerfile
+    assert "--no-deps" not in dockerfile
+    assert "python -m pip check" in dockerfile
+    assert "useradd --uid 65532" in dockerfile
+    assert "USER sidecar:sidecar" in dockerfile
+    assert "NNUNET_BIND_HOST=0.0.0.0" in dockerfile
+    assert "127.0.0.1:7862:7862" in plan
+
+
+def test_reconstructed_lock_is_full_and_exactly_pinned() -> None:
+    lock_path = Path(__file__).parents[2] / "sidecar" / "nnunet" / "requirements.lock"
+    lines = lock_path.read_text(encoding="utf-8").splitlines()
+    pins = [line for line in lines if line and not line.startswith("#")]
+
+    assert any("reconstructed" in line.lower() for line in lines if line.startswith("#"))
+    assert any("not the original environment" in line.lower() for line in lines if line.startswith("#"))
+    assert "nnunetv2==2.8.1" in pins
+    assert len(pins) >= 50
+    assert all(re.fullmatch(r"[A-Za-z0-9_.-]+==[^\s;]+", line) for line in pins)
+    assert not any(
+        token in line.lower()
+        for line in pins
+        for token in ("git+", "http://", "https://", "file:", " @ ", "-e ")
+    )

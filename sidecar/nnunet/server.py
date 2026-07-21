@@ -131,14 +131,21 @@ class SidecarHandler(BaseHTTPRequestHandler):
         self._send_json(200, response)
 
 
-def make_server(backend: PredictorBackend, *, port: int = 7862) -> SidecarHTTPServer:
+def make_server(
+    backend: PredictorBackend,
+    *,
+    port: int = 7862,
+    host: str = "127.0.0.1",
+) -> SidecarHTTPServer:
+    if host not in {"127.0.0.1", "0.0.0.0"}:
+        raise ValueError("invalid_bind_host")
     if (
         backend.model_id != MODEL_ID
         or backend.checkpoint_sha256 != CHECKPOINT_SHA256
         or backend.device != "cuda:0"
     ):
         raise ValueError("artifact_drift")
-    return SidecarHTTPServer(("127.0.0.1", port), backend)
+    return SidecarHTTPServer((host, port), backend)
 
 
 def main() -> int:
@@ -148,9 +155,10 @@ def main() -> int:
             "NNUNET_MODEL_MANIFEST", "/app/sidecar/nnunet/model_manifest.example.json"
         )
     )
+    bind_host = os.environ.get("NNUNET_BIND_HOST", "127.0.0.1")
     try:
         backend = Loop192Predictor(model_root, manifest)
-        server = make_server(cast(PredictorBackend, backend))
+        server = make_server(cast(PredictorBackend, backend), host=bind_host)
     except BaseException as exc:
         public_code = getattr(exc, "public_code", "runtime_unavailable")
         raise SystemExit(public_code) from None

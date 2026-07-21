@@ -74,7 +74,9 @@ workflow. Its candidate cache is not presented as live arbitrary-upload output.
 
 ### WSL nnU-Net Sidecar
 
-- Binds to `127.0.0.1:7862`; never binds externally.
+- Direct runs bind `127.0.0.1:7862`. Container runs listen on
+  `0.0.0.0:7862` only inside the isolated container namespace and Docker
+  publishes exactly `127.0.0.1:7862:7862`; no external host mapping is allowed.
 - Loads the exact Loop192 checkpoint, plans, fingerprint, trainer, and dataset
   metadata whose hashes match the evidence report.
 - Accepts one validated RGB image and a request ID over localhost.

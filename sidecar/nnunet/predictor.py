@@ -224,6 +224,7 @@ class Loop192Predictor:
         self.checkpoint_sha256 = str(
             manifest["artifacts"]["checkpoint_final.pth"]["sha256"]
         )
+        os.environ["nnUNet_results"] = str(bundle)
 
         try:
             torch, predictor_class, version = runtime_loader()
@@ -306,4 +307,3 @@ class Loop192Predictor:
                 dtype=np.uint8,
             )
         return validate_binary_mask(binary)
-
