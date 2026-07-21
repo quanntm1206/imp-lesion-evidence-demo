@@ -564,7 +564,7 @@ apk info -e '7zip=24.09-r0' || exit 72
 apk info -v --installed 7zip | grep -Fx '7zip-24.09-r0' >/dev/null || exit 73
 printf 'recovery_7zip=7zip-24.09-r0\n'
 set +e
-7zz e -y -o/output /input/source.vhdx "$@" >/tmp/7zip.stdout 2>/tmp/7zip.stderr
+7zz e -y -o/output /input/source.vhdx "$@" </dev/null >/tmp/7zip.stdout 2>/tmp/7zip.stderr
 status=$?
 set -e
 printf '__IMP_7Z_BODY_BEGIN\n'

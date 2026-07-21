@@ -313,6 +313,18 @@ def test_recovery_checks_installed_7zip_without_repository_indexes() -> None:
     assert "apk info -v 7zip |" not in script
 
 
+def test_recovery_isolates_7zip_from_shell_script_stdin() -> None:
+    script = _read("scripts/demo/recover_nnunet_artifacts.ps1")
+    command = '7zz e -y -o/output /input/source.vhdx "$@"'
+
+    assert (
+        command
+        + " </dev/null >/tmp/7zip.stdout 2>/tmp/7zip.stderr"
+        in script
+    )
+    assert command + " >/tmp/7zip.stdout 2>/tmp/7zip.stderr" not in script
+
+
 def test_recovery_container_arguments_lock_mounts_and_image() -> None:
     result = _run_recovery_function_harness(
         ("New-ContainerRecoveryArguments",),
