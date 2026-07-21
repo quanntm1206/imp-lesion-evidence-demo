@@ -97,3 +97,28 @@ def test_asset_manifest_binds_source_and_output_bytes() -> None:
         assert _sha256(output) == entry["output_sha256"]
         assert output.suffix == ".png"
         assert output.stat().st_size > 20_000
+
+
+def test_html_exposes_accessible_navigation_and_reduced_motion() -> None:
+    html = INDEX.read_text(encoding="utf-8")
+    css = CSS.read_text(encoding="utf-8")
+    js = JS.read_text(encoding="utf-8")
+    assert 'aria-live="polite"' in html
+    assert 'aria-label="Presentation controls"' in html
+    assert "prefers-reduced-motion" in css
+    assert "[hidden]" in css
+    assert "hashchange" in js
+    assert 'event.key === "Escape"' in js
+    assert "Back to Pipeline" in js
+    assert "default_demo_url" in js
+
+
+def test_html_has_no_network_runtime_dependencies() -> None:
+    html = INDEX.read_text(encoding="utf-8")
+    css = CSS.read_text(encoding="utf-8")
+    js = JS.read_text(encoding="utf-8")
+    combined = html + css + js
+    assert "https://cdn" not in combined
+    assert "fonts.googleapis.com" not in combined
+    assert "unpkg.com" not in combined
+    assert "node_modules" not in combined
