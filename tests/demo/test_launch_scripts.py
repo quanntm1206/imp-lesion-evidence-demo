@@ -39,6 +39,28 @@ def _powershell_literal(value: Path | str) -> str:
     return str(value).replace("'", "''")
 
 
+def _run_recovery_function_harness(
+    function_names: tuple[str, ...], body: str
+) -> subprocess.CompletedProcess[str]:
+    names = ",".join(f"'{name}'" for name in function_names)
+    script = _powershell_literal(ROOT / "scripts/demo/recover_nnunet_artifacts.ps1")
+    command = (
+        f"$tokens=$null; $errors=$null; $ast=[Management.Automation.Language.Parser]::"
+        f"ParseFile('{script}',[ref]$tokens,[ref]$errors); if($errors){{throw $errors[0]}}; "
+        f"foreach($name in @({names})){{$definition=$ast.Find({{param($node) "
+        "$node -is [Management.Automation.Language.FunctionDefinitionAst] -and "
+        "$node.Name -ceq $name},$true); if($null -eq $definition){throw "
+        "\"missing function: $name\"}; Invoke-Expression $definition.Extent.Text}; "
+        + body
+    )
+    return subprocess.run(
+        [_powershell(), "-NoProfile", "-Command", command],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def _fake_python(
     tmp_path: Path, *, capture_environment: bool = False
 ) -> Path:
@@ -255,6 +277,79 @@ def test_recovery_script_uses_only_the_exact_vhd_environment_metadata() -> None:
         "acvl-utils",
     ):
         assert package in script
+
+
+def test_recovery_wsl_path_keeps_single_line_as_string() -> None:
+    result = _run_recovery_function_harness(
+        ("ConvertTo-WslPath",),
+        "function Invoke-WslSystem { '/mnt/e/path with spaces' }; "
+        "$value=ConvertTo-WslPath -WindowsPath 'E:\\path with spaces'; "
+        "[pscustomobject]@{type=$value.GetType().FullName;value=$value} | "
+        "ConvertTo-Json -Compress",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout.strip()) == {
+        "type": "System.String",
+        "value": "/mnt/e/path with spaces",
+    }
+
+
+def test_recovery_cleanup_attempts_every_layer_after_partial_failures() -> None:
+    result = _run_recovery_function_harness(
+        ("Invoke-RecoveryCleanup",),
+        "$script:calls=New-Object 'System.Collections.Generic.List[string]'; "
+        "function Invoke-WslSystemScript { $script:calls.Add('filesystem'); "
+        "throw 'filesystem cleanup failed' }; "
+        "function global:wsl.exe { $script:calls.Add('wsl'); "
+        "$global:LASTEXITCODE=9; 'not attached' }; "
+        "function Get-DiskImage { $script:calls.Add('query'); "
+        "[pscustomobject]@{Attached=$true} }; "
+        "function Dismount-VHD { $script:calls.Add('vhd') }; "
+        "$cleanup=@(Invoke-RecoveryCleanup -FilesystemMountAttempted $true "
+        "-WslAttachAttempted $true -VhdMountAttempted $true "
+        "-LinuxMount '/mnt/wsl/recovery' -PhysicalDrive '\\\\.\\PHYSICALDRIVE9' "
+        "-ResolvedVhd 'E:\\source.vhdx'); "
+        "[pscustomobject]@{calls=@($script:calls);errors=$cleanup} | "
+        "ConvertTo-Json -Depth 4 -Compress",
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout.strip())
+    assert payload["calls"] == ["filesystem", "wsl", "query", "vhd"]
+    errors = "\n".join(payload["errors"])
+    assert "filesystem cleanup failed" in errors
+    assert "WSL disk detach failed" in errors
+
+
+def test_recovery_preserves_operation_and_cleanup_failures() -> None:
+    result = _run_recovery_function_harness(
+        ("Assert-RecoveryCompleted",),
+        "$message=$null; try { Assert-RecoveryCompleted "
+        "-OperationError ([InvalidOperationException]::new('primary failure')) "
+        "-CleanupErrors @('secondary failure') } catch { $message=$_.Exception.Message }; "
+        "$message",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "primary failure" in result.stdout
+    assert "secondary failure" in result.stdout
+
+
+def test_recovery_marks_attempts_before_mutating_commands() -> None:
+    script = _read("scripts/demo/recover_nnunet_artifacts.ps1")
+
+    assert script.index("$vhdMountAttempted = $true") < script.index(
+        "$mountedVhd = Mount-VHD"
+    )
+    assert script.index("$wslAttachAttempted = $true") < script.index(
+        "@('--mount', $physicalDrive, '--bare')"
+    )
+    assert script.index("$filesystemMountAttempted = $true") < script.index(
+        "-Label 'read-only ext4 mount'"
+    )
+    assert 'if mountpoint -q -- "$1"; then' in script
+    assert 'umount -- "$1"' in script
 
 
 def test_demo_runbook_documents_locked_and_fixed_cache_modes() -> None:

@@ -114,6 +114,89 @@ function Invoke-WslSystemScript {
     return @($output | ForEach-Object { "$_" })
 }
 
+function ConvertTo-WslPath {
+    param([Parameter(Mandatory = $true)][string]$WindowsPath)
+
+    $values = @(Invoke-WslSystem -Arguments @('wslpath', '-a', '-u', '--', $WindowsPath) -Label 'output path conversion')
+    if ($values.Count -ne 1) {
+        throw "output path conversion returned $($values.Count) lines"
+    }
+    $value = ([string]$values[0]).Trim()
+    if (-not $value) {
+        throw 'output path conversion returned an empty path'
+    }
+    return $value
+}
+
+function Invoke-RecoveryCleanup {
+    param(
+        [bool]$FilesystemMountAttempted,
+        [bool]$WslAttachAttempted,
+        [bool]$VhdMountAttempted,
+        [string]$LinuxMount,
+        [string]$PhysicalDrive,
+        [Parameter(Mandatory = $true)][string]$ResolvedVhd
+    )
+
+    $errors = New-Object 'System.Collections.Generic.List[string]'
+    if ($FilesystemMountAttempted) {
+        $unmountScript = @'
+if mountpoint -q -- "$1"; then
+    umount -- "$1"
+fi
+'@
+        try {
+            [void](Invoke-WslSystemScript -Script $unmountScript -Arguments @($LinuxMount) -Label 'ext4 unmount')
+        }
+        catch {
+            [void]$errors.Add("ext4 unmount failed: $($_.Exception.Message)")
+        }
+    }
+    if ($WslAttachAttempted -and $PhysicalDrive) {
+        try {
+            $output = & wsl.exe --unmount $PhysicalDrive 2>&1
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0) {
+                [void]$errors.Add("WSL disk detach failed with exit code ${exitCode}: $($output -join [Environment]::NewLine)")
+            }
+        }
+        catch {
+            [void]$errors.Add("WSL disk detach failed: $($_.Exception.Message)")
+        }
+    }
+    if ($VhdMountAttempted) {
+        try {
+            $diskImage = Get-DiskImage -ImagePath $ResolvedVhd -ErrorAction Stop
+            if ($diskImage.Attached) {
+                [void](Dismount-VHD -Path $ResolvedVhd -ErrorAction Stop)
+            }
+        }
+        catch {
+            [void]$errors.Add("VHD detach failed: $($_.Exception.Message)")
+        }
+    }
+    return $errors.ToArray()
+}
+
+function Assert-RecoveryCompleted {
+    param(
+        [Exception]$OperationError,
+        [string[]]$CleanupErrors = @()
+    )
+
+    if ($null -eq $OperationError -and $CleanupErrors.Count -eq 0) {
+        return
+    }
+    $messages = New-Object 'System.Collections.Generic.List[string]'
+    if ($null -ne $OperationError) {
+        [void]$messages.Add("recovery operation failed: $($OperationError.Message)")
+    }
+    foreach ($cleanupError in $CleanupErrors) {
+        [void]$messages.Add($cleanupError)
+    }
+    throw ($messages -join [Environment]::NewLine)
+}
+
 function Get-FileIdentity {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -242,16 +325,17 @@ function Invoke-Recovery {
         [ordered]@{ slug = 'acvl-utils'; normalized = 'acvl-utils' }
     )
 
-    $vhdAttached = $false
-    $wslDiskAttached = $false
-    $filesystemMounted = $false
+    $vhdMountAttempted = $false
+    $wslAttachAttempted = $false
+    $filesystemMountAttempted = $false
     $physicalDrive = $null
     $linuxMount = "/mnt/wsl/loop192-recovery-$PID"
-    $cleanupErrors = New-Object 'System.Collections.Generic.List[string]'
+    $cleanupErrors = @()
+    $operationError = $null
 
     try {
+        $vhdMountAttempted = $true
         $mountedVhd = Mount-VHD -Path $resolvedVhd -ReadOnly -Passthru -ErrorAction Stop
-        $vhdAttached = $true
         $diskNumber = [int]$mountedVhd.DiskNumber
         $disk = Get-Disk -Number $diskNumber -ErrorAction Stop
         if (-not $disk.IsReadOnly) {
@@ -259,8 +343,8 @@ function Invoke-Recovery {
         }
 
         $physicalDrive = "\\.\PHYSICALDRIVE$diskNumber"
+        $wslAttachAttempted = $true
         [void](Invoke-NativeChecked -FilePath 'wsl.exe' -Arguments @('--mount', $physicalDrive, '--bare') -Label 'bare WSL attachment')
-        $wslDiskAttached = $true
 
         $beforeSet = @{}
         foreach ($line in $beforeDevices) {
@@ -297,8 +381,8 @@ set -eu
 mkdir -p -- "$1"
 mount -t ext4 -o ro,noload -- "$2" "$1"
 '@
+        $filesystemMountAttempted = $true
         [void](Invoke-WslSystemScript -Script $mountCommand -Arguments @($linuxMount, $linuxDevice) -Label 'read-only ext4 mount')
-        $filesystemMounted = $true
 
         $proofCommand = @'
 set -eu
@@ -314,7 +398,7 @@ esac
 '@
         [void](Invoke-WslSystemScript -Script $proofCommand -Arguments @($linuxMount) -Label 'ext4 read-only mount proof')
 
-        $wslOutput = (Invoke-WslSystem -Arguments @('wslpath', '-a', '-u', '--', $resolvedOutput) -Label 'output path conversion')[0].Trim()
+        $wslOutput = ConvertTo-WslPath -WindowsPath $resolvedOutput
         $copyCommand = @'
 set -eu
 test -f "$1/$2"
@@ -356,31 +440,19 @@ fi
             [void](Invoke-WslSystemScript -Script $packageCopyCommand -Arguments @($packageRoot, $package.normalized, $destination) -Label "package identity copy: $($package.slug)")
         }
     }
-    finally {
-        if ($filesystemMounted) {
-            $output = & wsl.exe --system -- umount -- $linuxMount 2>&1
-            if ($LASTEXITCODE -ne 0) {
-                $cleanupErrors.Add("ext4 unmount failed: $($output -join [Environment]::NewLine)")
-            }
-        }
-        if ($wslDiskAttached) {
-            $output = & wsl.exe --unmount $physicalDrive 2>&1
-            if ($LASTEXITCODE -ne 0) {
-                $cleanupErrors.Add("WSL disk detach failed: $($output -join [Environment]::NewLine)")
-            }
-        }
-        if ($vhdAttached) {
-            try {
-                Dismount-VHD -Path $resolvedVhd -ErrorAction Stop
-            }
-            catch {
-                $cleanupErrors.Add("VHD detach failed: $($_.Exception.Message)")
-            }
-        }
-        if ($cleanupErrors.Count -ne 0) {
-            throw ($cleanupErrors -join [Environment]::NewLine)
-        }
+    catch {
+        $operationError = $_.Exception
     }
+    finally {
+        $cleanupErrors = @(Invoke-RecoveryCleanup `
+            -FilesystemMountAttempted $filesystemMountAttempted `
+            -WslAttachAttempted $wslAttachAttempted `
+            -VhdMountAttempted $vhdMountAttempted `
+            -LinuxMount $linuxMount `
+            -PhysicalDrive $physicalDrive `
+            -ResolvedVhd $resolvedVhd)
+    }
+    Assert-RecoveryCompleted -OperationError $operationError -CleanupErrors $cleanupErrors
 
     $postImage = Get-DiskImage -ImagePath $resolvedVhd -ErrorAction Stop
     if ($postImage.Attached) {
