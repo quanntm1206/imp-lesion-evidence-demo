@@ -323,6 +323,27 @@ function Write-Utf8NoBom {
     [IO.File]::WriteAllText($Path, $Value, $encoding)
 }
 
+function Invoke-TrustedBundleVerifier {
+    param(
+        [Parameter(Mandatory = $true)][string]$TrustedPython,
+        [Parameter(Mandatory = $true)][string]$VerifierPath,
+        [Parameter(Mandatory = $true)][string]$OutputRoot,
+        [Parameter(Mandatory = $true)]$VerificationReport
+    )
+
+    $resolvedOutput = [IO.Path]::GetFullPath($OutputRoot)
+    $receiptPath = Join-Path $resolvedOutput 'recovery_receipt.json'
+    $reportJson = $VerificationReport | ConvertTo-Json -Depth 8 -Compress
+    $reportJson | & $TrustedPython $VerifierPath `
+        --bundle $resolvedOutput `
+        --report '-' `
+        --receipt $receiptPath
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        throw "Loop192 bundle verification failed with exit code $exitCode"
+    }
+}
+
 function Write-RuntimeIdentity {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
@@ -633,28 +654,17 @@ exit 0
         candidate_id = $sourceReport.candidate_id
         provenance = $sourceReport.provenance
         source_vhd_proof = [ordered]@{ before = $before; after = $after }
+        recovery_backend = 'container-readonly-7zip'
+        parser_warning = 'Headers Error'
+        runtime_status = 'reconstructed_required'
     }
     $verifierPath = Join-Path $PSScriptRoot 'verify_nnunet_bundle.py'
-    $receiptPath = Join-Path $resolvedOutput 'recovery_receipt.json'
-    $verifierCode = @'
-import importlib.util
-import json
-from pathlib import Path
-import sys
-spec = importlib.util.spec_from_file_location("loop192_verifier", sys.argv[1])
-if spec is None or spec.loader is None:
-    raise RuntimeError("unable to load trusted verifier")
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
-receipt = module.verify_bundle(Path(sys.argv[2]), json.loads(sys.stdin.read()))
-receipt.update(recovery_backend="container-readonly-7zip", parser_warning="Headers Error", runtime_status="reconstructed_required")
-Path(sys.argv[3]).write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-'@
     $trustedPython = Resolve-TrustedPython -ExplicitPath $PythonExe
-    ($verificationReport | ConvertTo-Json -Depth 8 -Compress) | & $trustedPython -c $verifierCode $verifierPath $resolvedOutput $receiptPath
-    if ($LASTEXITCODE -ne 0) {
-        throw "Loop192 bundle verification failed with exit code $LASTEXITCODE"
-    }
+    Invoke-TrustedBundleVerifier `
+        -TrustedPython $trustedPython `
+        -VerifierPath $verifierPath `
+        -OutputRoot $resolvedOutput `
+        -VerificationReport $verificationReport
     Assert-ExactRecoveryFiles -Root $resolvedOutput -Expected @($rawNames + 'runtime_identity.json' + 'requirements.lock' + 'recovery_receipt.json')
     Write-Output 'recovery=passed backend=container-readonly-7zip warning=Headers Error runtime_status=reconstructed_required'
 }
@@ -863,30 +873,13 @@ fi
             after = $after
         }
     }
-    $verificationJson = $verificationReport | ConvertTo-Json -Depth 8 -Compress
-
     $verifierPath = Join-Path $PSScriptRoot 'verify_nnunet_bundle.py'
-    $receiptPath = Join-Path $resolvedOutput 'recovery_receipt.json'
-    $verifierCode = @'
-import importlib.util
-import json
-from pathlib import Path
-import sys
-
-spec = importlib.util.spec_from_file_location("loop192_verifier", sys.argv[1])
-if spec is None or spec.loader is None:
-    raise RuntimeError("unable to load trusted verifier")
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
-report = json.loads(sys.stdin.read())
-receipt = module.verify_bundle(Path(sys.argv[2]), report)
-Path(sys.argv[3]).write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-'@
     $trustedPython = Resolve-TrustedPython -ExplicitPath $PythonExe
-    $verificationJson | & $trustedPython -c $verifierCode $verifierPath $resolvedOutput $receiptPath
-    if ($LASTEXITCODE -ne 0) {
-        throw "Loop192 bundle verification failed with exit code $LASTEXITCODE"
-    }
+    Invoke-TrustedBundleVerifier `
+        -TrustedPython $trustedPython `
+        -VerifierPath $verifierPath `
+        -OutputRoot $resolvedOutput `
+        -VerificationReport $verificationReport
 
     Write-Output 'recovery=passed'
 }

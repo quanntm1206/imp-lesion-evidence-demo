@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import os
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -167,3 +170,183 @@ def test_bundle_verifier_rejects_report_provenance_outside_expected_pin(
 
     with pytest.raises(ValueError, match="checkpoint provenance does not match Loop192 pin"):
         verifier.verify_bundle(bundle, report)
+
+
+def test_bundle_verifier_cli_writes_atomic_sorted_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundle, report = fake_loop192_bundle(tmp_path)
+    report["encoding_probe"] = "caf\u00e9"
+    report.update(
+        recovery_backend="container-readonly-7zip",
+        parser_warning="Headers Error",
+        runtime_status="reconstructed_required",
+    )
+    _allow_fake_pins(monkeypatch, report)
+    report_path = bundle / ".verification-report.json"
+    receipt_path = bundle / "recovery_receipt.json"
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False), encoding="utf-8"
+    )
+    expected = verifier.verify_bundle(bundle, report)
+    expected.update(
+        recovery_backend="container-readonly-7zip",
+        parser_warning="Headers Error",
+        runtime_status="reconstructed_required",
+    )
+    replace_calls: list[tuple[Path, Path]] = []
+    real_replace = os.replace
+
+    def observed_replace(source, destination) -> None:
+        replace_calls.append((Path(source), Path(destination)))
+        real_replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", observed_replace)
+
+    result = verifier.main(
+        [
+            "--bundle",
+            str(bundle),
+            "--report",
+            str(report_path),
+            "--receipt",
+            str(receipt_path),
+        ]
+    )
+
+    assert result == 0
+    assert len(replace_calls) == 1
+    temporary, destination = replace_calls[0]
+    assert temporary.parent.resolve() == bundle.resolve()
+    assert destination.resolve() == receipt_path.resolve()
+    assert not temporary.exists()
+    assert receipt_path.read_text(encoding="utf-8") == (
+        json.dumps(expected, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    )
+    assert str(tmp_path) not in receipt_path.read_text(encoding="utf-8")
+
+
+def test_bundle_verifier_cli_rejects_malformed_report(tmp_path: Path) -> None:
+    bundle, _ = fake_loop192_bundle(tmp_path)
+    report_path = bundle / ".verification-report.json"
+    receipt_path = bundle / "recovery_receipt.json"
+    report_path.write_text("{malformed", encoding="ascii")
+
+    with pytest.raises(json.JSONDecodeError):
+        verifier.main(
+            [
+                "--bundle",
+                str(bundle),
+                "--report",
+                str(report_path),
+                "--receipt",
+                str(receipt_path),
+            ]
+        )
+
+    assert not receipt_path.exists()
+
+
+def test_bundle_verifier_cli_rejects_receipt_outside_bundle(tmp_path: Path) -> None:
+    bundle, report = fake_loop192_bundle(tmp_path)
+    report_path = bundle / ".verification-report.json"
+    report_path.write_text(json.dumps(report), encoding="ascii")
+
+    with pytest.raises(ValueError, match="receipt parent must equal resolved bundle"):
+        verifier.main(
+            [
+                "--bundle",
+                str(bundle),
+                "--report",
+                str(report_path),
+                "--receipt",
+                str(tmp_path / "outside-receipt.json"),
+            ]
+        )
+
+
+def test_bundle_verifier_cli_reads_report_from_stdin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundle, report = fake_loop192_bundle(tmp_path)
+    _allow_fake_pins(monkeypatch, report)
+    receipt_path = bundle / "recovery_receipt.json"
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(report)))
+
+    result = verifier.main(
+        [
+            "--bundle",
+            str(bundle),
+            "--report",
+            "-",
+            "--receipt",
+            str(receipt_path),
+        ]
+    )
+
+    assert result == 0
+    assert json.loads(receipt_path.read_text(encoding="utf-8")) == (
+        verifier.verify_bundle(bundle, report)
+    )
+
+
+@pytest.mark.parametrize(
+    ("full_flag", "abbreviated_flag"),
+    [("--bundle", "--bund"), ("--report", "--repo"), ("--receipt", "--rece")],
+)
+def test_bundle_verifier_cli_rejects_abbreviated_flags(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    full_flag: str,
+    abbreviated_flag: str,
+) -> None:
+    bundle, report = fake_loop192_bundle(tmp_path)
+    _allow_fake_pins(monkeypatch, report)
+    report_path = bundle / ".verification-report.json"
+    receipt_path = bundle / "recovery_receipt.json"
+    report_path.write_text(json.dumps(report), encoding="ascii")
+    arguments = [
+        "--bundle",
+        str(bundle),
+        "--report",
+        str(report_path),
+        "--receipt",
+        str(receipt_path),
+    ]
+    arguments[arguments.index(full_flag)] = abbreviated_flag
+
+    with pytest.raises(SystemExit):
+        verifier.main(arguments)
+
+
+@pytest.mark.parametrize("kind", ["report", "receipt"])
+def test_bundle_verifier_cli_rejects_reparse_paths(
+    tmp_path: Path, kind: str
+) -> None:
+    bundle, report = fake_loop192_bundle(tmp_path)
+    report_target = bundle / "report-target.json"
+    report_target.write_text(json.dumps(report), encoding="ascii")
+    report_path = bundle / ".verification-report.json"
+    receipt_path = bundle / "recovery_receipt.json"
+    if kind == "report":
+        link, target = report_path, report_target
+    else:
+        report_path.write_text(json.dumps(report), encoding="ascii")
+        link, target = receipt_path, tmp_path / "receipt-target.json"
+        target.write_text("{}", encoding="ascii")
+    try:
+        link.symlink_to(target)
+    except OSError as error:
+        pytest.skip(f"file symlink unavailable: {error}")
+
+    with pytest.raises(ValueError, match=f"{kind} must not be a reparse point"):
+        verifier.main(
+            [
+                "--bundle",
+                str(bundle),
+                "--report",
+                str(report_path),
+                "--receipt",
+                str(receipt_path),
+            ]
+        )

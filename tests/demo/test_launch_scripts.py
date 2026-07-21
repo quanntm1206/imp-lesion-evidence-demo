@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from threading import Thread
 
 import pytest
@@ -376,7 +377,7 @@ def test_recovery_rejects_non_python_executable(tmp_path: Path) -> None:
     assert "filename must be exactly python.exe" in result.stderr
 
 
-def test_recovery_python_parameter_wires_both_verifiers_after_safety_checks() -> None:
+def test_recovery_python_parameter_wires_cli_after_safety_checks() -> None:
     script = _read("scripts/demo/recover_nnunet_artifacts.ps1")
     container = script[
         script.index("function Invoke-ContainerRecovery") : script.index(
@@ -391,7 +392,9 @@ def test_recovery_python_parameter_wires_both_verifiers_after_safety_checks() ->
 
     assert script.index("[string]$PythonExe = ''") < script.index("Set-StrictMode")
     assert script.count("Resolve-TrustedPython -ExplicitPath $PythonExe") == 2
-    assert script.count("| & $trustedPython -c $verifierCode") == 2
+    assert "$verifierCode" not in script
+    assert "-c $verifierCode" not in script
+    assert script.count("Invoke-TrustedBundleVerifier") == 3
     assert container.index(
         "Assert-ExactRecoveryFiles -Root $resolvedOutput -Expected $rawNames"
     ) < container.index("Resolve-TrustedPython -ExplicitPath $PythonExe")
@@ -405,6 +408,43 @@ def test_recovery_python_parameter_wires_both_verifiers_after_safety_checks() ->
     ]
     assert "Get-Command" not in resolver
     assert script.count(".venv-win\\Scripts\\python.exe") == 1
+    helper = script[
+        script.index("function Invoke-TrustedBundleVerifier") : script.index(
+            "function Write-RuntimeIdentity"
+        )
+    ]
+    for token in (
+        "--bundle",
+        "--report '-'",
+        "--receipt",
+        "ConvertTo-Json -Depth 8 -Compress",
+        "| & $TrustedPython $VerifierPath",
+    ):
+        assert token in helper
+    assert ".verification-report" not in helper
+    assert "FileStream" not in helper
+    assert "[IO.File]::Delete" not in helper
+
+
+def test_recovery_verifier_cli_avoids_inline_argv_and_cleans_owned_report(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    result = _run_recovery_function_harness(
+        ("Invoke-TrustedBundleVerifier",),
+        "Invoke-TrustedBundleVerifier "
+        f"-TrustedPython '{_powershell_literal(sys.executable)}' "
+        f"-VerifierPath '{_powershell_literal(ROOT / 'scripts/demo/verify_nnunet_bundle.py')}' "
+        f"-OutputRoot '{_powershell_literal(bundle)}' "
+        "-VerificationReport ([ordered]@{})",
+    )
+
+    assert result.returncode != 0
+    assert "Loop192 bundle verification failed with exit code" in result.stderr
+    assert "SyntaxError" not in result.stderr
+    assert "RuntimeError(unable" not in result.stderr
+    assert not list(bundle.glob(".verification-report*.json"))
 
 
 def test_recovery_plan_passes_explicit_trusted_python() -> None:

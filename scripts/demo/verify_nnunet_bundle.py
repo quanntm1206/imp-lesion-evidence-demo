@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
-from collections.abc import Mapping
+import json
+import os
+import stat
+import sys
+import tempfile
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
 from types import MappingProxyType
+from typing import Any
 
 
 REQUIRED = {
@@ -27,6 +33,13 @@ PINNED_HASHES = MappingProxyType(
     }
 )
 VHD_PROOF_FIELDS = ("length", "creation_time_utc", "last_write_time_utc")
+RECEIPT_CONTEXT = MappingProxyType(
+    {
+        "recovery_backend": "container-readonly-7zip",
+        "parser_warning": "Headers Error",
+        "runtime_status": "reconstructed_required",
+    }
+)
 
 
 def sha256_file(path: Path, *, chunk_size: int = 1 << 20) -> str:
@@ -108,3 +121,102 @@ def verify_bundle(bundle: Path, report: Mapping[str, Any]) -> dict[str, Any]:
         "metadata": metadata,
         "source_vhd_unchanged": True,
     }
+
+
+def _is_reparse(info: os.stat_result) -> bool:
+    attributes = getattr(info, "st_file_attributes", 0)
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    return stat.S_ISLNK(info.st_mode) or bool(attributes & reparse_flag)
+
+
+def _resolve_regular_file(path: Path, *, label: str) -> Path:
+    try:
+        info = path.lstat()
+    except FileNotFoundError as error:
+        raise ValueError(f"{label} must be a regular file") from error
+    if _is_reparse(info):
+        raise ValueError(f"{label} must not be a reparse point")
+    if not stat.S_ISREG(info.st_mode):
+        raise ValueError(f"{label} must be a regular file")
+    return path.resolve(strict=True)
+
+
+def _resolve_receipt_path(bundle: Path, receipt: Path) -> Path:
+    try:
+        parent = receipt.parent.resolve(strict=True)
+    except FileNotFoundError as error:
+        raise ValueError("receipt parent must equal resolved bundle") from error
+    if parent != bundle:
+        raise ValueError("receipt parent must equal resolved bundle")
+    resolved = parent / receipt.name
+    try:
+        info = resolved.lstat()
+    except FileNotFoundError:
+        return resolved
+    if _is_reparse(info):
+        raise ValueError("receipt must not be a reparse point")
+    if not stat.S_ISREG(info.st_mode):
+        raise ValueError("receipt must be a regular file")
+    return resolved
+
+
+def _write_receipt_atomic(path: Path, receipt: Mapping[str, Any]) -> None:
+    payload = json.dumps(
+        receipt,
+        indent=2,
+        sort_keys=True,
+        allow_nan=False,
+    ) + "\n"
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Verify the recovered Loop192 bundle",
+        allow_abbrev=False,
+    )
+    parser.add_argument("--bundle", required=True, type=Path)
+    parser.add_argument("--report", required=True)
+    parser.add_argument("--receipt", required=True, type=Path)
+    args = parser.parse_args(argv)
+
+    bundle = args.bundle.resolve(strict=True)
+    if not bundle.is_dir():
+        raise ValueError("bundle must be a directory")
+    receipt_path = _resolve_receipt_path(bundle, args.receipt)
+    if args.report == "-":
+        report_text = sys.stdin.read()
+    else:
+        report_path = _resolve_regular_file(Path(args.report), label="report")
+        if report_path == receipt_path:
+            raise ValueError("report and receipt must differ")
+        report_text = report_path.read_text(encoding="utf-8")
+    report = json.loads(report_text)
+    if not isinstance(report, Mapping):
+        raise ValueError("report must contain a JSON object")
+
+    receipt = verify_bundle(bundle, report)
+    for key, expected in RECEIPT_CONTEXT.items():
+        if key in report:
+            if report[key] != expected:
+                raise ValueError(f"{key} does not match the trusted receipt context")
+            receipt[key] = expected
+    _write_receipt_atomic(receipt_path, receipt)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
