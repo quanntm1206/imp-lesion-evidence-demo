@@ -93,25 +93,31 @@ workflow. Its candidate cache is not presented as live arbitrary-upload output.
 - The launch aborts on OOM, non-finite output, timeout, or unexpected device.
 - No automatic CPU fallback is allowed for the public defense URL.
 
-## WSL Recovery
+## WSL Artifact Recovery
 
 The current `Ubuntu-E` distribution cannot resolve its recorded users and emits
-filesystem/user database errors. Recovery is staged and non-destructive:
+filesystem/user database errors. Its 552 GB VHD cannot be fully backed up on the
+available disks. The approved recovery therefore treats the original VHD as an
+immutable source and does not attempt distro repair:
 
-1. Record distro registration, VHD location, size, free disk space, and current
-   WSL status.
-2. Stop the distribution before any VHD operation.
-3. Create a verified backup using `wsl --export --vhd` when possible. If export
-   cannot start, copy the stopped VHD byte-for-byte to a separate backup path and
-   verify size plus SHA-256.
-4. Never unregister, reset, compact, overwrite, or delete the source distro.
-5. Inspect the backup or a read-only attachment first. Recover the Loop192
-   checkpoint, plans, fingerprint, trainer metadata, and environment lock data.
-6. Compare every recovered artifact against the hashes recorded in the Loop192
-   report. Stop on any mismatch.
-7. Prefer restoring the existing environment. If it is unrecoverable, build a
-   new isolated WSL sidecar environment while preserving the recovered artifacts
-   and recorded inference contract.
+1. Record distro registration, VHD location, size, free disk space, current WSL
+   status, and the VHD file timestamps before attachment.
+2. Stop the distribution before attachment. Never unregister, reset, compact,
+   resize, overwrite, import in place, or delete the source distro or VHD.
+3. Attach the source VHD at the Windows layer read-only, expose it bare to the
+   WSL system distribution, then mount the ext4 filesystem with `ro,noload`.
+   Abort if either read-only property cannot be proved before file access.
+4. Copy only the Loop192 checkpoint, plans, fingerprint, dataset metadata,
+   trainer metadata, prediction metadata, and environment lock data into a new
+   extraction directory. Do not execute binaries or import Python modules from
+   the damaged filesystem.
+5. Compare the checkpoint, plans, and fingerprint against the hashes recorded in
+   the Loop192 report. Record hashes and sizes for every other recovered file.
+   Stop on any mismatch or missing required artifact.
+6. Unmount and detach the source. Verify its size and timestamps are unchanged;
+   retain the path-free extraction receipt.
+7. Build a fresh isolated Docker/WSL2 sidecar runtime from pinned dependencies
+   and the copied artifacts. The damaged distro is never used to serve requests.
 
 ## Request Flow
 
