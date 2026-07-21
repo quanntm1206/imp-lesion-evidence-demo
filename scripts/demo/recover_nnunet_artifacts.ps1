@@ -445,8 +445,8 @@ function Assert-ContainerParserResult {
         throw 'Docker parser did not prove 7zip=24.09-r0'
     }
     $exitLines = @($lines | Where-Object { $_ -like '__IMP_7Z_EXIT=*' })
-    if ($exitLines.Count -ne 1 -or $exitLines[0] -cne '__IMP_7Z_EXIT=2') {
-        throw 'Docker parser requires exactly one __IMP_7Z_EXIT=2 marker'
+    if ($exitLines.Count -ne 1 -or $exitLines[0] -cne '__IMP_7Z_EXIT=0') {
+        throw 'Docker parser requires exactly one __IMP_7Z_EXIT=0 marker'
     }
     $beginLines = @($lines | Where-Object { $_ -ceq '__IMP_7Z_BODY_BEGIN' })
     $endLines = @($lines | Where-Object { $_ -ceq '__IMP_7Z_BODY_END' })
@@ -455,7 +455,7 @@ function Assert-ContainerParserResult {
     }
     $beginIndex = [Array]::IndexOf($lines, '__IMP_7Z_BODY_BEGIN')
     $endIndex = [Array]::IndexOf($lines, '__IMP_7Z_BODY_END')
-    $exitIndex = [Array]::IndexOf($lines, '__IMP_7Z_EXIT=2')
+    $exitIndex = [Array]::IndexOf($lines, '__IMP_7Z_EXIT=0')
     if ($beginIndex -ge $endIndex -or $endIndex -ge $exitIndex) {
         throw 'Docker parser marker order is invalid'
     }
@@ -464,7 +464,14 @@ function Assert-ContainerParserResult {
         $body = @($lines[($beginIndex + 1)..($endIndex - 1)])
     }
     $diagnostics = @($body | Where-Object { $_ -match '(?i)(warning|error)' } | Sort-Object)
-    $expectedDiagnostics = @('Archives with Errors: 1', 'ERRORS:', 'Headers Error') | Sort-Object
+    $expectedDiagnostics = @(
+        'Archives with Warnings: 1',
+        'Headers Error',
+        'Headers Error',
+        'WARNINGS:',
+        'WARNINGS:',
+        'Warnings: 1'
+    ) | Sort-Object
     if (($diagnostics -join "`n") -cne ($expectedDiagnostics -join "`n")) {
         throw "Docker parser diagnostic multiset mismatch: $($diagnostics -join ', ')"
     }

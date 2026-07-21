@@ -362,11 +362,14 @@ def test_recovery_parser_accepts_exact_locked_diagnostics() -> None:
             "recovery_7zip=7zip-24.09-r0",
             "apk output outside parser body",
             "__IMP_7Z_BODY_BEGIN",
-            "ERRORS:",
+            "WARNINGS:",
             "Headers Error",
-            "Archives with Errors: 1",
+            "WARNINGS:",
+            "Headers Error",
+            "Archives with Warnings: 1",
+            "Warnings: 1",
             "__IMP_7Z_BODY_END",
-            "__IMP_7Z_EXIT=2",
+            "__IMP_7Z_EXIT=0",
         ]
     )
 
@@ -377,9 +380,12 @@ def test_recovery_parser_accepts_exact_locked_diagnostics() -> None:
 @pytest.mark.parametrize(
     ("mutation", "expected"),
     [
-        ("missing_marker", "exactly one __IMP_7Z_EXIT=2"),
-        ("duplicate_marker", "exactly one __IMP_7Z_EXIT=2"),
-        ("wrong_code", "exactly one __IMP_7Z_EXIT=2"),
+        ("missing_marker", "exactly one __IMP_7Z_EXIT=0"),
+        ("duplicate_marker", "exactly one __IMP_7Z_EXIT=0"),
+        ("wrong_code", "exactly one __IMP_7Z_EXIT=0"),
+        ("remove_duplicate", "diagnostic multiset"),
+        ("add_third", "diagnostic multiset"),
+        ("error_summary", "diagnostic multiset"),
         ("missing_summary", "diagnostic multiset"),
         ("extra_summary", "diagnostic multiset"),
     ],
@@ -390,22 +396,31 @@ def test_recovery_parser_rejects_diagnostic_drift(
     lines = [
         "recovery_7zip=7zip-24.09-r0",
         "__IMP_7Z_BODY_BEGIN",
-        "ERRORS:",
+        "WARNINGS:",
         "Headers Error",
-        "Archives with Errors: 1",
+        "WARNINGS:",
+        "Headers Error",
+        "Archives with Warnings: 1",
+        "Warnings: 1",
         "__IMP_7Z_BODY_END",
-        "__IMP_7Z_EXIT=2",
+        "__IMP_7Z_EXIT=0",
     ]
     if mutation == "missing_marker":
         lines.pop()
     elif mutation == "duplicate_marker":
-        lines.append("__IMP_7Z_EXIT=2")
+        lines.append("__IMP_7Z_EXIT=0")
     elif mutation == "wrong_code":
-        lines[-1] = "__IMP_7Z_EXIT=1"
+        lines[-1] = "__IMP_7Z_EXIT=2"
+    elif mutation == "remove_duplicate":
+        lines.remove("Headers Error")
+    elif mutation == "add_third":
+        lines.insert(lines.index("__IMP_7Z_BODY_END"), "Headers Error")
+    elif mutation == "error_summary":
+        lines[lines.index("Archives with Warnings: 1")] = "Archives with Errors: 1"
     elif mutation == "missing_summary":
-        lines.remove("Archives with Errors: 1")
+        lines.remove("Warnings: 1")
     else:
-        lines.insert(lines.index("__IMP_7Z_BODY_END"), "Warnings: 1")
+        lines.insert(lines.index("__IMP_7Z_BODY_END"), "Open Warnings: 1")
 
     result = _run_container_parser_lines(lines)
 
