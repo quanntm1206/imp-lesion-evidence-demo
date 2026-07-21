@@ -4,6 +4,7 @@ import hashlib
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+from types import MappingProxyType
 
 
 REQUIRED = {
@@ -18,6 +19,13 @@ METADATA = (
     "requirements.lock",
 )
 MODEL_ID = "L192-nnUNet-v2-raw-100ep"
+PINNED_HASHES = MappingProxyType(
+    {
+        "checkpoint_sha256": "3814716033afd464dacc573f92a5a44ff20eb7f2163d99b4f16ecff8aa278ea2",
+        "plans_sha256": "b60e4defd229b03f7064dc5b66123545c91cdaa44c09d990b86690a94e1e08a7",
+        "fingerprint_sha256": "931da8aae52ffecd726d5928009ebdcae7002e24b035fad89177e0bc81dba85c",
+    }
+)
 VHD_PROOF_FIELDS = ("length", "creation_time_utc", "last_write_time_utc")
 
 
@@ -75,9 +83,12 @@ def verify_bundle(bundle: Path, report: Mapping[str, Any]) -> dict[str, Any]:
     _verify_source_vhd_proof(report)
     observed: dict[str, str] = {}
     for filename, (key, label) in REQUIRED.items():
+        expected = PINNED_HASHES[key]
+        if str(provenance[key]) != expected:
+            raise ValueError(f"{label} provenance does not match Loop192 pin")
         value = sha256_file(bundle / filename)
-        if value != str(provenance[key]):
-            raise ValueError(f"{label} hash mismatch")
+        if value != expected:
+            raise ValueError(f"{label} hash does not match Loop192 pin")
         observed[key] = value
 
     metadata: dict[str, dict[str, Any]] = {}

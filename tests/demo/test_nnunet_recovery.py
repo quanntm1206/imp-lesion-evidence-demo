@@ -6,11 +6,24 @@ from pathlib import Path
 
 import pytest
 
-from scripts.demo.verify_nnunet_bundle import verify_bundle
+from scripts.demo import verify_nnunet_bundle as verifier
+
+
+EXPECTED_PINS = {
+    "checkpoint_sha256": "3814716033afd464dacc573f92a5a44ff20eb7f2163d99b4f16ecff8aa278ea2",
+    "plans_sha256": "b60e4defd229b03f7064dc5b66123545c91cdaa44c09d990b86690a94e1e08a7",
+    "fingerprint_sha256": "931da8aae52ffecd726d5928009ebdcae7002e24b035fad89177e0bc81dba85c",
+}
 
 
 def _sha256(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
+
+
+def _allow_fake_pins(monkeypatch: pytest.MonkeyPatch, report: dict[str, object]) -> None:
+    provenance = report["provenance"]
+    assert isinstance(provenance, dict)
+    monkeypatch.setattr(verifier, "PINNED_HASHES", provenance.copy(), raising=False)
 
 
 def fake_loop192_bundle(tmp_path: Path) -> tuple[Path, dict[str, object]]:
@@ -50,10 +63,13 @@ def fake_loop192_bundle(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     return bundle, report
 
 
-def test_bundle_verifier_binds_required_hashes_and_omits_paths(tmp_path: Path) -> None:
+def test_bundle_verifier_binds_required_hashes_and_omits_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bundle, report = fake_loop192_bundle(tmp_path)
+    _allow_fake_pins(monkeypatch, report)
 
-    receipt = verify_bundle(bundle, report)
+    receipt = verifier.verify_bundle(bundle, report)
 
     provenance = report["provenance"]
     assert receipt["schema_version"] == "loop192.recovery.receipt.v1"
@@ -64,27 +80,33 @@ def test_bundle_verifier_binds_required_hashes_and_omits_paths(tmp_path: Path) -
     assert "path" not in json.dumps(receipt).lower()
 
 
-def test_bundle_verifier_stops_on_hash_drift(tmp_path: Path) -> None:
+def test_bundle_verifier_stops_on_hash_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bundle, report = fake_loop192_bundle(tmp_path)
+    _allow_fake_pins(monkeypatch, report)
     (bundle / "checkpoint_final.pth").write_bytes(b"drift")
 
-    with pytest.raises(ValueError, match="checkpoint hash mismatch"):
-        verify_bundle(bundle, report)
+    with pytest.raises(ValueError, match="checkpoint hash does not match Loop192 pin"):
+        verifier.verify_bundle(bundle, report)
 
 
-def test_bundle_verifier_requires_recovery_metadata(tmp_path: Path) -> None:
+def test_bundle_verifier_requires_recovery_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bundle, report = fake_loop192_bundle(tmp_path)
+    _allow_fake_pins(monkeypatch, report)
     (bundle / "requirements.lock").unlink()
 
     with pytest.raises(FileNotFoundError, match="required Loop192 metadata missing: requirements.lock"):
-        verify_bundle(bundle, report)
+        verifier.verify_bundle(bundle, report)
 
 
 def test_bundle_verifier_rejects_malformed_report(tmp_path: Path) -> None:
     bundle, _ = fake_loop192_bundle(tmp_path)
 
     with pytest.raises(KeyError, match="provenance"):
-        verify_bundle(bundle, {"candidate_id": "L192-nnUNet-v2-raw-100ep"})
+        verifier.verify_bundle(bundle, {"candidate_id": "L192-nnUNet-v2-raw-100ep"})
 
 
 def test_bundle_verifier_rejects_path_bearing_candidate_id(tmp_path: Path) -> None:
@@ -92,7 +114,7 @@ def test_bundle_verifier_rejects_path_bearing_candidate_id(tmp_path: Path) -> No
     report["candidate_id"] = r"C:\private\loop192"
 
     with pytest.raises(ValueError, match="candidate_id must not contain a local path"):
-        verify_bundle(bundle, report)
+        verifier.verify_bundle(bundle, report)
 
 
 def test_bundle_verifier_rejects_unpinned_candidate_id(tmp_path: Path) -> None:
@@ -100,7 +122,7 @@ def test_bundle_verifier_rejects_unpinned_candidate_id(tmp_path: Path) -> None:
     report["candidate_id"] = "L191-C0-clean-v3-IMP-control"
 
     with pytest.raises(ValueError, match="candidate_id does not match Loop192"):
-        verify_bundle(bundle, report)
+        verifier.verify_bundle(bundle, report)
 
 
 def test_bundle_verifier_requires_unchanged_source_vhd_proof(tmp_path: Path) -> None:
@@ -108,7 +130,7 @@ def test_bundle_verifier_requires_unchanged_source_vhd_proof(tmp_path: Path) -> 
     report.pop("source_vhd_proof")
 
     with pytest.raises(ValueError, match="source VHD unchanged proof required"):
-        verify_bundle(bundle, report)
+        verifier.verify_bundle(bundle, report)
 
 
 def test_bundle_verifier_rejects_changed_source_vhd_proof(tmp_path: Path) -> None:
@@ -120,4 +142,28 @@ def test_bundle_verifier_rejects_changed_source_vhd_proof(tmp_path: Path) -> Non
     after["length"] = 552_000_000_001
 
     with pytest.raises(ValueError, match="source VHD changed after recovery"):
-        verify_bundle(bundle, report)
+        verifier.verify_bundle(bundle, report)
+
+
+def test_bundle_verifier_pins_exact_loop192_hashes() -> None:
+    assert dict(getattr(verifier, "PINNED_HASHES", {})) == EXPECTED_PINS
+
+
+def test_bundle_verifier_rejects_matching_unpinned_bundle_and_report(tmp_path: Path) -> None:
+    bundle, report = fake_loop192_bundle(tmp_path)
+
+    with pytest.raises(ValueError, match="checkpoint provenance does not match Loop192 pin"):
+        verifier.verify_bundle(bundle, report)
+
+
+def test_bundle_verifier_rejects_report_provenance_outside_expected_pin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundle, report = fake_loop192_bundle(tmp_path)
+    _allow_fake_pins(monkeypatch, report)
+    provenance = report["provenance"]
+    assert isinstance(provenance, dict)
+    provenance["checkpoint_sha256"] = "0" * 64
+
+    with pytest.raises(ValueError, match="checkpoint provenance does not match Loop192 pin"):
+        verifier.verify_bundle(bundle, report)
