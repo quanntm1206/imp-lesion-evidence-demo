@@ -116,8 +116,12 @@ immutable source and does not attempt distro repair:
    the locked container parser is permitted as a non-administrator fallback.
    Its triple proof is an exact Docker read-only bind, no block mount, no journal replay,
    and the pinned artifact hashes. The original transitive environment
-   is unavailable, so the runtime is reconstructed and must pass checkpoint load
-   plus output replay before public launch.
+   is unavailable, so the runtime is reconstructed. Task 4 acceptance requires
+   exact artifact hashes, a reconstructed dependency lock, CUDA/API identity,
+   checkpoint load, same-current-runtime determinism on one public input, and
+   live inference on two materially different public inputs with identical
+   dimensions, distinct input hashes, and distinct current output hashes. This
+   does not prove original-runtime equivalence.
 4. Copy only the Loop192 checkpoint, plans, fingerprint, dataset metadata,
    trainer metadata, prediction metadata, and environment lock data into a new
    extraction directory. Do not execute binaries or import Python modules from

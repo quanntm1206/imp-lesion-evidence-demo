@@ -790,7 +790,7 @@ def test_recovery_design_documents_locked_inspection_fallback() -> None:
         assert token in design
 
 
-def test_recovery_design_documents_container_parser_proof_and_replay_gate() -> None:
+def test_recovery_design_documents_container_parser_proof() -> None:
     design = _read("docs/superpowers/specs/2026-07-21-dual-live-demo-design.md").lower()
 
     for token in (
@@ -802,9 +802,37 @@ def test_recovery_design_documents_container_parser_proof_and_replay_gate() -> N
         "pinned artifact hashes",
         "reconstructed",
         "checkpoint load",
-        "output replay",
     ):
         assert token in design
+
+
+def test_task4_docs_replace_unavailable_original_output_replay_gate() -> None:
+    documents = tuple(
+        re.sub(r"\s+", " ", _read(path).lower())
+        for path in (
+            "docs/superpowers/specs/2026-07-21-dual-live-demo-design.md",
+            "docs/superpowers/plans/2026-07-21-dual-live-demo.md",
+        )
+    )
+    required_contract = (
+        "exact artifact hashes",
+        "reconstructed dependency lock",
+        "cuda/api identity",
+        "checkpoint load",
+        "same-current-runtime determinism",
+        "one public input",
+        "two materially different public inputs",
+        "identical dimensions",
+        "distinct input hashes",
+        "distinct current output hashes",
+        "does not prove original-runtime equivalence",
+    )
+
+    for document in documents:
+        for token in required_contract:
+            assert token in document
+        assert "plus output replay before public launch" not in document
+        assert "recorded-output replay remain acceptance gates" not in document
 
 
 def test_recovery_marks_attempts_before_mutating_commands() -> None:

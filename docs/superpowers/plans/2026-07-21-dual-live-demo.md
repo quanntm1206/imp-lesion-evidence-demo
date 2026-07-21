@@ -357,7 +357,9 @@ Default/direct execution uses `ThreadingHTTPServer(("127.0.0.1", 7862), Handler)
 
 - [ ] **Step 5: Build the pinned container**
 
-Use `pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime@sha256:eee11b3b3872a8c838e35ef48f08b2d5def2080902c7f666831310ca1a0ef2be`. Install `nnunetv2==2.8.1` inside that base and commit its full transitive `pip list --format=freeze` result as a clearly labeled reconstructed lock. Fail the build if the lock contains editable, local-path, VCS, or unpinned entries. Mount artifacts read-only at `/models/loop192`; publish `127.0.0.1:7862:7862`; request one GPU; set `PYTHONHASHSEED=0`, `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, and `nnUNet_compile=false`. Do not claim equivalence to the unavailable original environment; checkpoint initialization and recorded-output replay remain acceptance gates.
+Use `pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime@sha256:eee11b3b3872a8c838e35ef48f08b2d5def2080902c7f666831310ca1a0ef2be`. Install `nnunetv2==2.8.1` inside that base and commit its full transitive `pip list --format=freeze` result as a clearly labeled reconstructed lock. Fail the build if the lock contains editable, local-path, VCS, or unpinned entries. Mount artifacts read-only at `/models/loop192`; publish `127.0.0.1:7862:7862`; request one GPU; set `PYTHONHASHSEED=0`, `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, and `nnUNet_compile=false`.
+
+The original recorded output is unavailable. Replace that replay gate with the following complete Task 4 acceptance contract: exact artifact hashes; reconstructed dependency lock; CUDA/API identity; checkpoint load; same-current-runtime determinism on one public input; and live inference on two materially different public inputs with identical dimensions, distinct input hashes, and distinct current output hashes. Record input and output hashes without private paths. This does not prove original-runtime equivalence.
 
 - [ ] **Step 6: Run unit tests and container identity probe**
 
@@ -370,6 +372,14 @@ Run: `docker build -t imp-nnunet-sidecar:loop192 -f sidecar/nnunet/Dockerfile .`
 Run: `docker run --rm --gpus all imp-nnunet-sidecar:loop192 python -c "import json,inspect,torch; from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor; print(json.dumps({'cuda':torch.cuda.is_available(),'init':str(inspect.signature(nnUNetPredictor.initialize_from_trained_model_folder)),'single':str(inspect.signature(nnUNetPredictor.predict_single_npy_array))}))"`
 
 Expected: `cuda=true`; signatures match adapter calls.
+
+Run the loaded checkpoint twice on one public input in the same current
+container/runtime. Expected: identical current output hashes. Then run live
+inference on two materially different public inputs with identical dimensions.
+Expected: both requests succeed, their input hashes are distinct, and their
+current output hashes are distinct. These checks establish current-runtime
+determinism and input sensitivity only; they do not establish equivalence with
+the unavailable original runtime.
 
 - [ ] **Step 7: Commit**
 
