@@ -122,3 +122,8 @@ def test_html_has_no_network_runtime_dependencies() -> None:
     assert "fonts.googleapis.com" not in combined
     assert "unpkg.com" not in combined
     assert "node_modules" not in combined
+
+
+def test_final_pptx_exists_and_is_nontrivial() -> None:
+    assert PPTX.exists()
+    assert PPTX.stat().st_size > 100_000
