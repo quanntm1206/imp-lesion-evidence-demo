@@ -28,11 +28,23 @@ def fake_loop192_bundle(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     for filename, content in artifacts.items():
         (bundle / filename).write_bytes(content)
     report: dict[str, object] = {
-        "candidate_id": "loop192-nnunet-clean-v3",
+        "candidate_id": "L192-nnUNet-v2-raw-100ep",
         "provenance": {
             "checkpoint_sha256": _sha256(artifacts["checkpoint_final.pth"]),
             "plans_sha256": _sha256(artifacts["nnUNetPlans.json"]),
             "fingerprint_sha256": _sha256(artifacts["dataset_fingerprint.json"]),
+        },
+        "source_vhd_proof": {
+            "before": {
+                "length": 552_000_000_000,
+                "creation_time_utc": "2026-07-01T00:00:00Z",
+                "last_write_time_utc": "2026-07-01T00:00:00Z",
+            },
+            "after": {
+                "length": 552_000_000_000,
+                "creation_time_utc": "2026-07-01T00:00:00Z",
+                "last_write_time_utc": "2026-07-01T00:00:00Z",
+            },
         },
     }
     return bundle, report
@@ -72,4 +84,40 @@ def test_bundle_verifier_rejects_malformed_report(tmp_path: Path) -> None:
     bundle, _ = fake_loop192_bundle(tmp_path)
 
     with pytest.raises(KeyError, match="provenance"):
-        verify_bundle(bundle, {"candidate_id": "loop192-nnunet-clean-v3"})
+        verify_bundle(bundle, {"candidate_id": "L192-nnUNet-v2-raw-100ep"})
+
+
+def test_bundle_verifier_rejects_path_bearing_candidate_id(tmp_path: Path) -> None:
+    bundle, report = fake_loop192_bundle(tmp_path)
+    report["candidate_id"] = r"C:\private\loop192"
+
+    with pytest.raises(ValueError, match="candidate_id must not contain a local path"):
+        verify_bundle(bundle, report)
+
+
+def test_bundle_verifier_rejects_unpinned_candidate_id(tmp_path: Path) -> None:
+    bundle, report = fake_loop192_bundle(tmp_path)
+    report["candidate_id"] = "L191-C0-clean-v3-IMP-control"
+
+    with pytest.raises(ValueError, match="candidate_id does not match Loop192"):
+        verify_bundle(bundle, report)
+
+
+def test_bundle_verifier_requires_unchanged_source_vhd_proof(tmp_path: Path) -> None:
+    bundle, report = fake_loop192_bundle(tmp_path)
+    report.pop("source_vhd_proof")
+
+    with pytest.raises(ValueError, match="source VHD unchanged proof required"):
+        verify_bundle(bundle, report)
+
+
+def test_bundle_verifier_rejects_changed_source_vhd_proof(tmp_path: Path) -> None:
+    bundle, report = fake_loop192_bundle(tmp_path)
+    proof = report["source_vhd_proof"]
+    assert isinstance(proof, dict)
+    after = proof["after"]
+    assert isinstance(after, dict)
+    after["length"] = 552_000_000_001
+
+    with pytest.raises(ValueError, match="source VHD changed after recovery"):
+        verify_bundle(bundle, report)
