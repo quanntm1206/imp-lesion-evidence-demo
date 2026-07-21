@@ -149,7 +149,7 @@ function createQuestionStage(slideData) {
   questions.forEach((question, index) => {
     const column = element("section", "question-column");
     column.append(element("span", "question-index", `0${index + 1}`));
-    column.append(element("p", "", question.replace(/^RQ\d:\s*/, "")));
+    column.append(element("p", "", question.replace(/^RQ[0-9]+: */, "")));
     stage.append(column);
   });
   return stage;
