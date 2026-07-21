@@ -4,7 +4,7 @@
 
 \input{tables/clean_v3_validation}
 
-nnU-Net v2 has the higher recorded robust-Dice point estimate: 0.9019 versus 0.8959 for \impmodel{}. Its boundary F1 and recall have higher recorded point estimates, while the IMP control has slightly higher precision. These directions suggest an overlap--precision trade-off, but the lack of repeated seeds and paired confidence intervals prevents a statistical-superiority conclusion.
+nnU-Net v2 has the higher recorded robust-Dice point estimate: 0.9019 versus 0.8959 for \impmodel{}. Its boundary F1 and recall have higher recorded point estimates, while the IMP control has slightly higher precision. These directions suggest an overlap--precision trade-off, but adaptive use of validation, the lack of repeated seeds, and unavailable paired confidence intervals prevent a statistical-superiority conclusion.
 
 The result also does not authorize test-v3 access under the historical combined gate. The correct statement is therefore narrow: under the legacy geometry contract, nnU-Net has higher recorded \cleanv{} validation point estimates for robust Dice and boundary F1. These single-run observations are not a superiority conclusion.
 
@@ -15,17 +15,17 @@ The result also does not authorize test-v3 access under the historical combined 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{figures/loop206_delta.pdf}
-\caption{Loop206 candidate-minus-control deltas on the \texttt{train\_screen} protocol with 95\% paired cluster-bootstrap confidence intervals. The zero line marks no paired change. Loop191 and Loop192 point estimates are excluded because paired confidence intervals are unavailable for those runs.}
+\caption{Loop206 candidate-minus-control deltas on the \texttt{train\_screen} protocol with 95\% split-group cluster-bootstrap confidence intervals after averaging selected seeds and views. The intervals are conditional on those seeds. The zero line marks no paired change. Loop191 and Loop192 point estimates are excluded because paired confidence intervals are unavailable for those runs.}
 \label{fig:loop206-delta}
 \end{figure}
 
-The contour channel reduces robust Dice by 0.0313. Its 95\% confidence interval, $[-0.0491,-0.0156]$, lies entirely below zero. On this three-seed, 76-group train-screen protocol, that result is sufficient to fail the preregistered primary gate; it does not establish a broader claim about contour methods. Boundary F1 changes by $-0.0147$; its interval $[-0.0308,0.0010]$ includes zero, providing no evidence of the intended boundary benefit. Precision and recall also decline in the recorded aggregate, while HD95 and ASSD increase. No arm produces an empty prediction.
+After averaging the three selected seeds and three views, the contour channel changes robust Dice by $-0.0313$. Its conditional 95\% split-group bootstrap interval, $[-0.0491,-0.0156]$, lies entirely below zero. Per-seed directions are mixed---one slightly positive and two negative---so the aggregate statement must not be read as a reduction in every seed. On this 76-group train-screen protocol, the aggregate result is sufficient to fail the preregistered primary gate; it does not establish a broader claim about contour methods or seed-population uncertainty. Boundary F1 changes by $-0.0147$; its interval $[-0.0308,0.0010]$ includes zero, providing no evidence of the intended boundary benefit. Precision and recall also decline in the recorded aggregate, while HD95 and ASSD increase. No arm produces an empty prediction.
 
 The candidate fails the primary-improvement, Dice non-inferiority, boundary non-inferiority, clean-Dice, precision, recall, distance, and per-corruption gates. Clean-v3 validation, test-v3, and PH2 remain sealed. The operational default and scientific reference are unchanged.
 
 \subsection{Fixed-cache qualitative demonstration}
 
-Figure~\ref{fig:qualitative-demo} shows three clean, non-protected examples selected without prediction or metric inspection: the first, middle, and last rows after sorting all 76 train-screen rows by sample identifier and group key. Each comparison was produced by the real GPU service and has a path-free receipt with the exact evidence class \texttt{train\_screen / exact\_fixed\_cache / historical\_cache\_provenance\_drift}. Ground truth appears only after the source identity, raw and decoded hashes, CC-0 image license, and challenge ground-truth status match the pinned provenance manifest. The panels illustrate mask geometry and disagreement; they do not estimate generalization or authorize arbitrary-upload candidate inference.
+Figure~\ref{fig:qualitative-demo} shows three clean, non-protected examples selected without prediction or metric inspection: the first, middle, and last rows after sorting all 76 train-screen rows by sample identifier and group key. Each comparison was produced by the real GPU service and has a path-free receipt labeled \texttt{train\_screen}, \texttt{exact\_fixed\_cache}, and \texttt{historical\_cache\_provenance\_drift}. Ground truth appears only after the pinned provenance manifest verifies source identity, raw and decoded image hashes, CC-0 image license, and challenge ground-truth status. Mask bytes are separately bound to the pinned dataset index by raw, decoded-binary, and runtime digests before rendering. The panels illustrate mask geometry and disagreement; they do not estimate generalization or authorize arbitrary-upload candidate inference.
 
 \begin{figure*}[t]
 \centering

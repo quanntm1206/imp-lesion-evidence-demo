@@ -129,6 +129,16 @@ def run_fixed_comparison(
     except Exception:
         return _error_response()
     try:
+        if ground_truth is not None:
+            from lesion_robustness.demo.immutable_io import ImmutableSnapshot
+
+            actual_mask_sha256 = ImmutableSnapshot.decoded_binary_mask_sha256(
+                np.asarray(ground_truth)
+            )
+            if actual_mask_sha256 != str(
+                result.metadata.get("mask_sha256_runtime", "")
+            ):
+                raise ValueError("ground truth hash binding mismatch")
         metrics = evaluate_optional_ground_truth(
             result.control_mask, result.candidate_mask, ground_truth
         )
@@ -494,25 +504,17 @@ def _build_runtime_context(
     candidate_manifest: Path,
 ) -> dict[str, Any]:
     from lesion_robustness.demo.loop206_prior import load_dataset_index
-    from lesion_robustness.image_utils import read_mask, resize_image_and_mask
 
-    _, holdout, payload = load_dataset_index(dataset_index, dataset_roots=roots)
+    _, holdout, _ = load_dataset_index(dataset_index, dataset_roots=roots)
     choices = [
         (f"{row.sample_id} / {row.group_key}", row.group_key)
         for row in sorted(holdout, key=lambda value: (value.sample_id, value.group_key))
     ]
-    rows = {
-        str(row["group_key"]): row
-        for row in payload["rows"]
-        if row.get("role") == "holdout"
-    }
     masks: dict[str, np.ndarray] = {}
-    for identifier, row in rows.items():
-        mask_path = _safe_index_path(roots[int(row["mask_root"])], row["mask_relative"])
-        mask = read_mask(mask_path)
-        _, resized = resize_image_and_mask(np.zeros((*mask.shape, 3), dtype=np.uint8), mask, (384, 384))
-        assert resized is not None
-        masks[identifier] = np.asarray(resized, dtype=np.uint8)
+    for row in holdout:
+        if row.mask is None:
+            raise ValueError("Loop206 verified holdout mask is missing")
+        masks[row.group_key] = np.ascontiguousarray(row.mask, dtype=np.uint8).copy()
     manifest = json.loads(candidate_manifest.read_text(encoding="ascii"))
     corruptions = sorted(
         {

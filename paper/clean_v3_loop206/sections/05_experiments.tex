@@ -11,7 +11,7 @@ Figure~\ref{fig:evidence-pipeline} maps each experimental and demonstration outp
 
 \subsection{Architecture comparison}
 
-The primary validation table contains the Loop191 control and Loop192 nnU-Net v2. Both use the same \cleanv{} validation identities and the six-condition robustness panel. We report robust Dice, IoU, precision, recall, and boundary F1. Because each model has one recorded run and paired per-case evidence is not locally available in the rescue environment, no confidence interval or hypothesis test is attached to this table. Differences are descriptive point estimates.
+The primary validation table contains the Loop191 control and Loop192 nnU-Net v2. Both use the same \cleanv{} validation identities and the six-condition robustness panel. That validation partition also informed iterative development, checkpoint or model selection, and promotion decisions, so the comparison is adaptive and potentially selection-optimistic rather than confirmatory. We report robust Dice, IoU, precision, recall, and boundary F1. Because each model has one recorded run and paired per-case evidence is not locally available in the rescue environment, no confidence interval or hypothesis test is attached to this table. Differences are descriptive point estimates.
 
 Loop192 was evaluated against a preregistered combined promotion gate. Although its overlap and recall increased, it did not meet all boundary and precision constraints; the experiment stopped without test-v3 access. Gate failure is reported separately from metric ranking because an all-or-nothing promotion decision answers a different question from a Pareto comparison.
 
@@ -19,7 +19,7 @@ Loop192 was evaluated against a preregistered combined promotion gate. Although 
 
 Loop206 uses three matched seeds. For each seed, the zero-channel control and contour-channel candidate are trained for 20 epochs on the fit portion of the 384-group train-only pilot and evaluated on the same 76 train-screen holdout groups under clean, low-contrast, and Gaussian-noise conditions. No protected image or mask participates in fitting, threshold calibration, checkpoint selection, or evaluation.
 
-The primary endpoint is the paired candidate-minus-control robust Dice delta. Secondary endpoints include boundary F1, IoU, precision, recall, HD95, ASSD, empty predictions, and resource limits. Confidence intervals use 10,000 paired resamples over seed and split-group clusters, preserving the dependence between corruptions of one case.
+The primary endpoint is the paired candidate-minus-control robust Dice delta. Secondary endpoints include boundary F1, IoU, precision, recall, HD95, ASSD, empty predictions, and resource limits. For each split group, the procedure first averages paired candidate-minus-control deltas across the three selected seeds and three preregistered views. It then performs 10,000 paired bootstrap resamples of the 76 whole split groups. The interval preserves within-group view dependence but is conditional on the selected seeds; it does not estimate variability over seed selection.
 
 The preregistered gate requires a positive primary effect with a positive lower confidence bound, Dice and boundary non-inferiority, clean Dice preservation, precision improvement, recall preservation, distance-metric safety, and bounded corruption regressions. Failure closes Loop206 without protected validation or test access.
 

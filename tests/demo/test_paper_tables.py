@@ -17,12 +17,14 @@ def test_clean_v3_table_contains_scoped_point_estimates(tmp_path: Path) -> None:
     assert "SOTA" not in text
 
 
-def test_loop206_table_contains_three_seed_confidence_intervals(tmp_path: Path) -> None:
+def test_loop206_table_discloses_group_bootstrap_with_fixed_seeds(tmp_path: Path) -> None:
     outputs = build_tables(REGISTRY, tmp_path)
     text = outputs["loop206_ablation"].read_text(encoding="utf-8")
     assert "-0.0313" in text
     assert "[-0.0491, -0.0156]" in text
-    assert "three paired seeds" in text
+    assert "averaging three selected seeds and three views" in text
+    assert "76 groups as whole split-group clusters" in text
+    assert "conditional on those seeds" in text
 
 
 def test_legacy_table_carries_contamination_label(tmp_path: Path) -> None:

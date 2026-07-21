@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
+from lesion_robustness.demo.immutable_io import ImmutableSnapshot
+
 from lesion_robustness.demo.presentation import (
     NO_GT_MESSAGE,
     build_control_receipt,
@@ -52,6 +54,9 @@ def _fixed_result() -> SimpleNamespace:
             "candidate_data_sha256": "d" * 64,
             "zero_manifest_sha256": "e" * 64,
             "zero_data_sha256": "f" * 64,
+            "mask_sha256_raw": "1" * 64,
+            "mask_sha256_binary": "2" * 64,
+            "mask_sha256_runtime": ImmutableSnapshot.decoded_binary_mask_sha256(mask),
             "historical_cache_provenance_drift": True,
             "path": "E:/private/data.jpg",
         },
@@ -65,6 +70,12 @@ def test_clean_evidence_keeps_validation_and_train_screen_scopes_separate() -> N
     assert "train_screen" in html
     assert "0.8959" in html and "0.9019" in html
     assert "-0.0313" in html
+    normalized = html.lower()
+    assert "adaptive development and checkpoint-selection validation" in normalized
+    assert "selection-optimistic" in normalized
+    assert "after averaging three selected seeds and three views" in normalized
+    assert "76 groups as whole split-group clusters" in normalized
+    assert "conditional on those selected seeds" in normalized
     assert "SOTA" not in html
 
 
@@ -102,8 +113,25 @@ def test_fixed_receipt_is_allowlisted_and_path_free() -> None:
     ]
     assert receipt["models"]["control"]["checkpoint_sha256"] == "a" * 64
     assert receipt["models"]["candidate"]["checkpoint_sha256"] == "b" * 64
+    assert receipt["ground_truth_binding"] is None
     for forbidden in ("E:/", "private", "path", "url", "filename", "environment"):
         assert forbidden not in encoded.lower()
+
+
+def test_fixed_metric_receipt_binds_verified_ground_truth_hashes() -> None:
+    result = _fixed_result()
+    metrics = {
+        arm: {metric: 1.0 for metric in ("dice", "iou", "boundary_f1", "hd95", "assd")}
+        for arm in ("control", "candidate")
+    }
+
+    receipt = build_fixed_receipt(result, metrics=metrics, registry=_registry())
+
+    assert receipt["ground_truth_binding"] == {
+        "mask_sha256_raw": "1" * 64,
+        "mask_sha256_binary": "2" * 64,
+        "mask_sha256_runtime": result.metadata["mask_sha256_runtime"],
+    }
 
 
 def test_control_receipt_contains_no_candidate_payload() -> None:

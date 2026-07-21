@@ -50,7 +50,7 @@ jobs:
           done
           git diff --exit-code -- paper/clean_v3_loop206/tables paper/clean_v3_loop206/artifact_manifest.json
 
-      - name: Audit evidence-bound paper
+      - name: Audit committed evidence-bound paper manifest
         run: |
           uv run --no-sync --python 3.12 python scripts/paper/audit_clean_v3_paper.py \
             --paper paper/clean_v3_loop206 \
@@ -98,8 +98,24 @@ jobs:
               "build_command": "latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex",
               "status": "passed",
           }
+          artifact_manifest = {
+              "schema_version": "imp.ci_paper_artifacts.v1",
+              "workflow_commit_sha": os.environ["GITHUB_SHA"],
+              "paper_pdf": {
+                  "path": "main.pdf",
+                  "sha256": receipt["built_pdf_sha256"],
+                  "pages": receipt["pages"],
+                  "bytes": receipt["bytes"],
+              },
+              "build_receipt_path": "../paper-build.json",
+          }
           output = Path("../../ci-receipts/paper-build.json")
           output.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="ascii")
+          manifest_output = Path("../../ci-receipts/paper/artifact_manifest.json")
+          manifest_output.write_text(
+              json.dumps(artifact_manifest, indent=2, sort_keys=True) + "\n",
+              encoding="ascii",
+          )
           PY
 
       - name: Upload paper and test receipts
@@ -111,4 +127,4 @@ jobs:
           path: |
             ci-receipts/
             ci-receipts/paper/main.pdf
-            paper/clean_v3_loop206/artifact_manifest.json
+            ci-receipts/paper/artifact_manifest.json

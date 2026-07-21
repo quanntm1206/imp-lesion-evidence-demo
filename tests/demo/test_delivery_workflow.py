@@ -2,6 +2,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tomllib
 
 import pytest
 import yaml
@@ -84,6 +85,9 @@ def test_ci_is_cpu_only_reproducible_and_uploads_receipts() -> None:
         "status",
     ):
         assert receipt_field in commands
+    assert "ci-receipts/paper/artifact_manifest.json" in commands
+    assert "imp.ci_paper_artifacts.v1" in commands
+    assert '"paper_pdf"' in commands
     assert "git diff --exit-code" in commands
     assert "torch.cuda.is_available()" not in commands
     upload_paths = "\n".join(
@@ -91,6 +95,8 @@ def test_ci_is_cpu_only_reproducible_and_uploads_receipts() -> None:
     )
     assert "ci-receipts/paper/main.pdf" in upload_paths
     assert "paper/clean_v3_loop206/main.pdf" not in upload_paths
+    assert "paper/clean_v3_loop206/artifact_manifest.json" not in upload_paths
+    assert "ci-receipts/paper/artifact_manifest.json" in upload_paths
     assert any("receipt" in str(step.get("with", {}).get("path", "")) for step in job["steps"])
 
 
@@ -195,3 +201,59 @@ def test_laptop_handoff_uses_external_venv_and_propagates_native_failures() -> N
     )
     assert simulation.returncode == 37
     assert "masked" not in simulation.stdout
+
+
+def test_browser_rendering_status_is_explicitly_unverified() -> None:
+    for relative in (
+        "README.md",
+        "demo/README.md",
+        "docs/runbooks/demo-operations.md",
+        "docs/runbooks/two-machine-delivery.md",
+    ):
+        assert (
+            "browser rendering and desktop/mobile screenshots remain unverified"
+            in _read(relative).lower()
+        )
+
+
+def test_declared_entrypoints_and_readme_scripts_are_tracked() -> None:
+    tracked = set(
+        subprocess.run(
+            ["git", "ls-files"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+    )
+    project = tomllib.loads(_read("pyproject.toml"))["project"]
+    scripts = project["scripts"]
+
+    assert set(scripts) == {"lesion-demo", "lesion-build-evidence"}
+    for target in scripts.values():
+        module = target.split(":", 1)[0]
+        assert f"src/{module.replace('.', '/')}.py" in tracked
+    for reference in re.findall(
+        r"scripts/[A-Za-z0-9_./-]+\.(?:py|ps1|sh)", _read("README.md")
+    ):
+        assert reference in tracked
+
+
+def test_artifact_transfer_is_recursive_relative_and_exact() -> None:
+    runbook = _read("docs/runbooks/two-machine-delivery.md")
+    transfer = runbook.split("## Artifact Transfer", 1)[1].split(
+        "## CI Contract", 1
+    )[0]
+
+    for token in (
+        "Get-ChildItem -LiteralPath $sourceRoot -Recurse -File",
+        "[IO.Path]::GetRelativePath",
+        "sha256-manifest.json",
+        "ConvertTo-Json",
+        "Compare-Object",
+        "[IO.Path]::IsPathRooted",
+        "Get-FileHash -Algorithm SHA256",
+    ):
+        assert token in transfer
+    assert "Format-Table Path,Hash" not in transfer
+    assert "absolute paths" in transfer.lower()

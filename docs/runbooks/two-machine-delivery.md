@@ -5,6 +5,7 @@
 - Main workstation, RTX 5060 Ti: artifact generation, model execution, and demo serving. Use `main` for integration and `demo-runtime` for source changes.
 - Laptop, RTX 4060 8 GB GPU and 16 GB RAM: clean-clone bootstrap, paper build, citation/read-only review, CPU tests, and an optional single-GPU smoke check. Use `paper-review` for source changes.
 - Do not load two models concurrently or claim laptop training capacity. The laptop assignment is review and validation, not full training.
+- Browser rendering and desktop/mobile screenshots remain unverified. Any visual-review steps in this runbook are pending operator checks, not release evidence.
 - Exchange code only by private GitHub push/pull. Exchange weights, priors, caches, and data only by private LAN/USB after SHA-256 verification; never through GitHub.
 
 ## Windows Bootstrap
@@ -85,13 +86,67 @@ Expected operator receipt: bootstrap exits zero; portable demo tests pass with o
 
 ## Artifact Transfer
 
-On the main workstation, set `IMP_ARTIFACT_TRANSFER_ROOT` to the private transfer directory, then write a hash manifest before LAN/USB transfer:
+Use PowerShell 7. On the main workstation, set `IMP_ARTIFACT_TRANSFER_ROOT` to the private transfer directory, then write a recursive, path-safe hash manifest before LAN/USB transfer:
 
 ```powershell
-Get-ChildItem -File $env:IMP_ARTIFACT_TRANSFER_ROOT | Get-FileHash -Algorithm SHA256 | Format-Table Path,Hash -AutoSize
+$ErrorActionPreference = 'Stop'
+$sourceRoot = (Resolve-Path -LiteralPath $env:IMP_ARTIFACT_TRANSFER_ROOT).Path
+$manifestName = 'sha256-manifest.json'
+$manifestPath = Join-Path $sourceRoot $manifestName
+$files = @(
+    Get-ChildItem -LiteralPath $sourceRoot -Recurse -File |
+        Where-Object { $_.FullName -ne $manifestPath } |
+        ForEach-Object {
+            $relative = [IO.Path]::GetRelativePath($sourceRoot, $_.FullName).Replace('\', '/')
+            if ([IO.Path]::IsPathRooted($relative) -or $relative -eq '..' -or $relative.StartsWith('../')) {
+                throw "Unsafe transfer path: $relative"
+            }
+            [ordered]@{
+                path = $relative
+                sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+                bytes = [int64]$_.Length
+            }
+        } |
+        Sort-Object path
+)
+$payload = [ordered]@{ schema_version = 'imp.private_transfer.v1'; files = $files }
+$json = $payload | ConvertTo-Json -Depth 5
+[IO.File]::WriteAllText($manifestPath, $json + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
 ```
 
-On the laptop, calculate SHA-256 again. Compare every filename and hash to the source manifest before use. Stop on a mismatch. Do not commit, upload, paste, or attach weights, priors, datasets, caches, environment values, tokens, or absolute private paths to GitHub issues or CI logs.
+Transfer the entire directory, including `sha256-manifest.json`. On the laptop, set `IMP_ARTIFACT_TRANSFER_ROOT` to the received directory, recompute the recursive manifest records, then require exact relative-path, size, and SHA-256 equality:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$destinationRoot = (Resolve-Path -LiteralPath $env:IMP_ARTIFACT_TRANSFER_ROOT).Path
+$manifestName = 'sha256-manifest.json'
+$manifestPath = Join-Path $destinationRoot $manifestName
+$manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+if ($manifest.schema_version -ne 'imp.private_transfer.v1') { throw 'Transfer manifest schema mismatch' }
+foreach ($entry in $manifest.files) {
+    $relative = [string]$entry.path
+    if ([IO.Path]::IsPathRooted($relative) -or $relative -eq '..' -or $relative.StartsWith('../') -or $relative.Contains('/../')) {
+        throw "Unsafe manifest path: $relative"
+    }
+}
+$actual = @(
+    Get-ChildItem -LiteralPath $destinationRoot -Recurse -File |
+        Where-Object { $_.FullName -ne $manifestPath } |
+        ForEach-Object {
+            $relative = [IO.Path]::GetRelativePath($destinationRoot, $_.FullName).Replace('\', '/')
+            [pscustomobject]@{
+                path = $relative
+                sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+                bytes = [int64]$_.Length
+            }
+        } |
+        Sort-Object path
+)
+$difference = Compare-Object -ReferenceObject @($manifest.files) -DifferenceObject $actual -Property path,sha256,bytes
+if ($difference) { $difference | Out-String | Write-Error; throw 'Artifact transfer verification failed' }
+```
+
+The manifest contains canonical relative paths only; it never records absolute paths. Stop on any missing, extra, changed, rooted, or traversal path. Do not commit, upload, paste, or attach weights, priors, datasets, caches, environment values, tokens, or absolute private paths to GitHub issues or CI logs.
 
 ## CI Contract
 

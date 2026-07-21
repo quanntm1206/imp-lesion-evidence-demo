@@ -15,6 +15,8 @@ powershell -ExecutionPolicy Bypass -File scripts/demo/run_demo.ps1
 
 Use `-Device cpu` only for a deliberate CPU rehearsal. Use `-CheckOnly` for preflight without opening the server. The queue has one worker.
 
+Browser rendering and desktop/mobile screenshots remain unverified. Treat the visual checks below as operator actions, not as a completed receipt.
+
 ## Temporary public rehearsal
 
 Install `cloudflared` on the operator machine. Start the local demo first. In a second terminal run:
@@ -35,4 +37,4 @@ The quick tunnel is unauthenticated. Use only non-sensitive synthetic or already
 
 ## Evidence limits
 
-Outputs are illustrative train-screen evidence. They are not validation, protected-test, clinical, or state-of-the-art claims. A ground-truth upload enables metrics only for the current fixed result. Invalid masks, oversized images, checkpoint failures, and unavailable candidate state fail closed without showing local paths, environment names, upload names, stack traces, cache locations, or weight locations in the public UI or downloadable receipt.
+Outputs are illustrative train-screen evidence. They are not validation, protected-test, clinical, or state-of-the-art claims. The provider-bound train-screen GT checkbox enables metrics only for the current fixed result. Invalid masks, oversized images, checkpoint failures, and unavailable candidate state fail closed without showing local paths, environment names, upload names, stack traces, cache locations, or weight locations in the public UI or downloadable receipt.

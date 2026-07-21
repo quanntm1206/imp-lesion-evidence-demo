@@ -71,6 +71,10 @@ def render_clean_evidence(registry: Mapping[str, Any]) -> str:
     if screen is not None:
         dice_ci = screen.get("robust_dice_ci95", [None, None])
         bf1_ci = screen.get("robust_bf1_ci95", [None, None])
+        seed_count = int(screen.get("seed_count", 0))
+        seed_label = "three" if seed_count == 3 else str(seed_count)
+        group_count = int(screen.get("group_count", 0))
+        bootstrap_resamples = int(screen.get("bootstrap_resamples", 0))
         screen_html = (
             '<article class="evidence-card evidence-card--negative">'
             '<div class="evidence-card__index">02 / CONTROLLED NEGATIVE ABLATION</div>'
@@ -82,6 +86,11 @@ def render_clean_evidence(registry: Mapping[str, Any]) -> str:
             f'<div><span>BF1 delta</span><strong>{_number(screen.get("robust_bf1_delta"))}</strong>'
             f'<small>95% CI [{_number(bf1_ci[0])}, {_number(bf1_ci[1])}]</small></div>'
             "</div>"
+            '<p class="scope-note">'
+            f"After averaging {seed_label} selected seeds and three views, "
+            f"{bootstrap_resamples:,} bootstrap resamples draw {group_count} groups as "
+            "whole split-group clusters. The interval is conditional on those selected "
+            "seeds and does not estimate variability over seed selection.</p>"
             f'<p>{_limitations(screen)}</p>'
             "</article>"
         )
@@ -91,7 +100,8 @@ def render_clean_evidence(registry: Mapping[str, Any]) -> str:
         '<div class="evidence-card__index">01 / ARCHITECTURE POINT ESTIMATES</div>'
         '<div class="badge badge--verified">protected_validation</div>'
         '<h3>Clean-v3 validation record</h3>'
-        '<p class="scope-note">Single-run point estimates. Protected test-v3 remained sealed.</p>'
+        '<p class="scope-note">Adaptive development and checkpoint-selection validation; '
+        'single-run, selection-optimistic point estimates. Protected test-v3 remained sealed.</p>'
         '<div class="table-scroll"><table class="audit-table"><thead><tr>'
         '<th>Model</th><th>Partition</th><th>Dice</th><th>BF1</th><th>Seeds</th><th>Limitations</th>'
         "</tr></thead><tbody>"
@@ -150,6 +160,13 @@ def build_fixed_receipt(
     registry: Mapping[str, Any],
 ) -> dict[str, Any]:
     metadata = result.metadata
+    ground_truth_binding = None
+    if metrics is not None:
+        ground_truth_binding = {
+            "mask_sha256_raw": str(metadata["mask_sha256_raw"]),
+            "mask_sha256_binary": str(metadata["mask_sha256_binary"]),
+            "mask_sha256_runtime": str(metadata["mask_sha256_runtime"]),
+        }
     return {
         "schema_version": "loop206.demo.receipt.v1",
         "mode": "exact_fixed_cache",
@@ -185,6 +202,7 @@ def build_fixed_receipt(
             metadata["historical_cache_provenance_drift"]
         ),
         "metrics": _public_metrics(metrics),
+        "ground_truth_binding": ground_truth_binding,
         "evidence_registry_sha256": str(registry.get("registry_sha256", "")),
     }
 

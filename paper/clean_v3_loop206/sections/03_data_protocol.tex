@@ -8,13 +8,13 @@ The integrity audit reported zero overlap across train, validation, and test par
 
 \subsection{Repair of contaminated legacy evidence}
 
-Clean-v2 used the same nominal total of 2,869 rows but contained three patient identifiers and 13 rows crossing partitions. All Loop170 results tied to this split are classified as \texttt{legacy\_patient\_contaminated}. They remain useful for operational traceability and for illustrating how conclusions change after an audit, but they are excluded from \cleanv{} ranking and from the main conclusion.
+Clean-v2 used the same nominal total of 2,869 rows but contained three patient identifiers and 13 rows crossing partitions. All Loop170 results tied to this split are classified as \path{legacy_patient_contaminated}. They remain useful for operational traceability and for illustrating how conclusions change after an audit, but they are excluded from \cleanv{} ranking and from the main conclusion.
 
 \input{tables/evidence_scope}
 
 \subsection{Partition access}
 
-Loop191 and Loop192 opened the \cleanv{} validation partition. Neither opened the 430-row test-v3 partition. Loop206 used only a train-derived pilot: 384 independent training groups were divided into 308 fit groups and 76 train-screen holdout groups. All protected \cleanv{} validation, test-v3, and PH2 paths remained sealed throughout Loop206.
+Loop191 and Loop192 used the \cleanv{} validation partition during iterative development, model or checkpoint selection, and promotion decisions. Their registry class \texttt{protected\_validation} records access scope; it does not make the partition untouched confirmatory evidence. We therefore describe these results as adaptive development and checkpoint-selection validation, with corresponding selection optimism. Neither loop opened the 430-row test-v3 partition. Loop206 used only a train-derived pilot: 384 independent training groups were divided into 308 fit groups and 76 train-screen holdout groups. All protected \cleanv{} validation, test-v3, and PH2 paths remained sealed throughout Loop206.
 
 This report does not open a new protected partition. It uses existing aggregate validation reports, the final Loop206 closure report, and contaminated legacy tables. The evidence registry records the SHA-256 of each source and sets \texttt{scientific\_sota\_status=not\_established}.
 

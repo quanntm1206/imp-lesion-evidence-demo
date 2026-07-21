@@ -21,6 +21,7 @@ from lesion_robustness.demo.app import (
 )
 from lesion_robustness.demo.model_service import CandidateUnavailableError
 from lesion_robustness.demo.presentation import NO_GT_MESSAGE
+from lesion_robustness.demo.immutable_io import ImmutableSnapshot
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -65,6 +66,9 @@ def _fixed_result() -> SimpleNamespace:
             "candidate_data_sha256": "d" * 64,
             "zero_manifest_sha256": "e" * 64,
             "zero_data_sha256": "f" * 64,
+            "mask_sha256_raw": "1" * 64,
+            "mask_sha256_binary": "2" * 64,
+            "mask_sha256_runtime": ImmutableSnapshot.decoded_binary_mask_sha256(mask),
             "historical_cache_provenance_drift": True,
         },
     )
@@ -130,6 +134,24 @@ def test_fixed_prediction_with_gt_has_both_arms() -> None:
     assert "Candidate" in response.metrics_markdown
     assert response.receipt["metrics"]["control"]["dice"] == 1.0
     assert response.receipt["metrics"]["candidate"]["dice"] == 1.0
+    assert response.receipt["ground_truth_binding"] == {
+        "mask_sha256_raw": "1" * 64,
+        "mask_sha256_binary": "2" * 64,
+        "mask_sha256_runtime": ImmutableSnapshot.decoded_binary_mask_sha256(gt),
+    }
+
+
+def test_fixed_prediction_rejects_ground_truth_outside_verified_mask_binding() -> None:
+    gt = _fixed_result().control_mask.copy()
+    gt[0, 0] = 1
+
+    response = run_fixed_comparison(
+        FakeService(), _registry(), "component:verified", "clean", gt
+    )
+
+    assert not response.ok
+    assert "ground truth" in response.error_html.lower()
+    assert response.receipt is None
 
 
 def test_control_only_preview_never_calls_candidate_compare() -> None:
@@ -312,6 +334,42 @@ def test_guarded_launch_wires_server_side_upload_byte_cap(
 
     assert captured["share"] is False
     assert captured["max_file_size"] == app_module.MAX_UPLOAD_BYTES
+
+
+def test_runtime_ground_truth_uses_verified_index_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import lesion_robustness.demo.loop206_prior as prior_module
+
+    mask = np.zeros((384, 384), dtype=np.uint8)
+    mask[100:200, 120:240] = 1
+    holdout = SimpleNamespace(
+        sample_id="sample",
+        group_key="group",
+        mask=mask,
+    )
+    payload = {
+        "rows": [
+            {
+                "sample_id": "sample",
+                "group_key": "group",
+                "role": "holdout",
+                "mask_root": 999,
+                "mask_relative": "must-not-be-reopened.png",
+            }
+        ]
+    }
+    monkeypatch.setattr(
+        prior_module,
+        "load_dataset_index",
+        lambda *_args, **_kwargs: ([], [holdout], payload),
+    )
+    candidate = tmp_path / "candidate.json"
+    candidate.write_text('{"rows": []}', encoding="ascii")
+
+    runtime = app_module._build_runtime_context(tmp_path / "index.json", [], candidate)
+
+    np.testing.assert_array_equal(runtime["fixed_ground_truth"]["group"], mask)
 
 
 def test_theme_declares_required_tokens_and_mobile_motion_contract() -> None:

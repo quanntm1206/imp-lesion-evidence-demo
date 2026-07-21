@@ -18,9 +18,8 @@ import numpy as np
 from lesion_robustness import loop204_protocol, loop205_protocol, loop206_active_contour
 from lesion_robustness.config import load_config
 from lesion_robustness.corruptions import apply_corruption, deterministic_corruption_kwargs
-from lesion_robustness.data_manifest import sha256_rgb
 from lesion_robustness.demo.immutable_io import ImmutableSnapshot
-from lesion_robustness.image_utils import read_mask, read_rgb, resize_image_and_mask
+from lesion_robustness.image_utils import resize_image_and_mask
 from lesion_robustness.packed_extra_channel import sha256_rgb_array
 from lesion_robustness.preprocessing import preprocess_image_from_config
 
@@ -128,6 +127,7 @@ class PriorHoldoutRow:
     group_key: str
     image: np.ndarray
     dataset_index: int
+    mask: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -440,20 +440,35 @@ def _load_passed_receipt(
 
 
 def load_deployment_prior(
-    artifact_path: str | Path, receipt_path: str | Path
+    artifact_path: str | Path,
+    receipt_path: str | Path,
+    *,
+    expected_receipt_sha256: str,
 ) -> Loop206Prior:
     """Load the Task5 prior only after validating its immutable parity receipt."""
 
-    prior, _ = load_deployment_prior_with_receipt_hash(artifact_path, receipt_path)
+    prior, _ = load_deployment_prior_with_receipt_hash(
+        artifact_path,
+        receipt_path,
+        expected_receipt_sha256=expected_receipt_sha256,
+    )
     return prior
 
 
 def load_deployment_prior_with_receipt_hash(
-    artifact_path: str | Path, receipt_path: str | Path
+    artifact_path: str | Path,
+    receipt_path: str | Path,
+    *,
+    expected_receipt_sha256: str,
 ) -> tuple[Loop206Prior, str]:
     """Return the prior and hash of the exact receipt bytes that authorized it."""
 
+    expected_receipt_hash = str(expected_receipt_sha256).strip().lower()
+    if not _is_sha256(expected_receipt_hash):
+        raise ValueError("Loop206 deployment receipt SHA256 pin is invalid")
     receipt_snapshot = ImmutableSnapshot.read(receipt_path)
+    if receipt_snapshot.sha256 != expected_receipt_hash:
+        raise ValueError("Loop206 deployment receipt SHA256 mismatch")
     receipt = _load_passed_receipt(receipt_path, _snapshot=receipt_snapshot)
     artifact_snapshot = ImmutableSnapshot.read(artifact_path)
     if artifact_snapshot.sha256 != receipt["artifact_sha256"]:
@@ -510,6 +525,27 @@ def _default_dataset_roots(dataset_index: Path) -> list[Path]:
         )
     )
     return [root.expanduser().resolve() for root in roots if root.expanduser().is_dir()]
+
+
+def _load_verified_indexed_pair(
+    image_path: Path, mask_path: Path, row: Mapping[str, Any]
+) -> tuple[np.ndarray, np.ndarray]:
+    sample_id = str(row.get("sample_id", ""))
+    image_snapshot = ImmutableSnapshot.read(image_path)
+    if image_snapshot.sha256 != str(row.get("sha256_raw", "")):
+        raise ValueError(f"Loop206 raw image hash mismatch: {sample_id}")
+    image = image_snapshot.decode_rgb()
+    if image_snapshot.decoded_rgb_sha256(image) != str(row.get("sha256_rgb", "")):
+        raise ValueError(f"Loop206 RGB image hash mismatch: {sample_id}")
+    mask_snapshot = ImmutableSnapshot.read(mask_path)
+    if mask_snapshot.sha256 != str(row.get("mask_sha256_raw", "")):
+        raise ValueError(f"Loop206 raw mask hash mismatch: {sample_id}")
+    mask = mask_snapshot.decode_binary_mask()
+    if mask_snapshot.decoded_binary_mask_sha256(mask) != str(
+        row.get("mask_sha256_binary", "")
+    ):
+        raise ValueError(f"Loop206 binary mask hash mismatch: {sample_id}")
+    return image, mask
 
 
 def load_dataset_index(
@@ -585,11 +621,7 @@ def load_dataset_index(
         mask_path = _safe_index_path(roots[mask_root], row["mask_relative"])
         if not image_path.is_file() or not mask_path.is_file():
             raise FileNotFoundError(f"Loop206 indexed dataset file is missing: {image_path}")
-        if sha256_file(image_path) != str(row.get("sha256_raw", "")):
-            raise ValueError(f"Loop206 raw image hash mismatch: {row['sample_id']}")
-        if sha256_rgb(image_path) != str(row.get("sha256_rgb", "")):
-            raise ValueError(f"Loop206 RGB image hash mismatch: {row['sample_id']}")
-        image, mask = read_rgb(image_path), read_mask(mask_path)
+        image, mask = _load_verified_indexed_pair(image_path, mask_path, row)
         resized_image, resized_mask = resize_image_and_mask(image, mask, (384, 384))
         assert resized_mask is not None
         if role == "fit":
@@ -610,6 +642,7 @@ def load_dataset_index(
                     group_key=group,
                     image=np.asarray(resized_image, dtype=np.uint8),
                     dataset_index=holdout_index,
+                    mask=np.asarray(resized_mask, dtype=np.uint8),
                 )
             )
             holdout_index += 1

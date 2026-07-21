@@ -39,6 +39,55 @@ def _powershell_literal(value: Path | str) -> str:
     return str(value).replace("'", "''")
 
 
+def _fake_python(
+    tmp_path: Path, *, capture_environment: bool = False
+) -> Path:
+    if os.name == "nt":
+        path = tmp_path / "python.cmd"
+        lines = [
+            "@echo off",
+            'if "%1"=="-" echo preflight=passed & exit /b 0',
+        ]
+        if capture_environment:
+            lines.extend(
+                [
+                    '> "%IMP_TEST_OBSERVATION%" echo GRADIO_TEMP_DIR=%GRADIO_TEMP_DIR%',
+                    '>> "%IMP_TEST_OBSERVATION%" echo IMP_LOOP206_DEMO_SESSION=%IMP_LOOP206_DEMO_SESSION%',
+                    '>> "%IMP_TEST_OBSERVATION%" echo TMP=%TMP%',
+                    '>> "%IMP_TEST_OBSERVATION%" echo TEMP=%TEMP%',
+                    '> "%GRADIO_TEMP_DIR%\\owned.tmp" echo temporary',
+                ]
+            )
+        lines.append("exit /b %IMP_TEST_APP_EXIT%")
+        path.write_text("\n".join(lines) + "\n", encoding="ascii")
+        return path
+
+    path = tmp_path / "python-fake"
+    body = [
+        "#!/usr/bin/env python3",
+        "import os",
+        "from pathlib import Path",
+        "import sys",
+        "if sys.argv[1:2] == ['-']:",
+        "    print('preflight=passed')",
+        "    raise SystemExit(0)",
+    ]
+    if capture_environment:
+        body.extend(
+            [
+                "names = ('GRADIO_TEMP_DIR', 'IMP_LOOP206_DEMO_SESSION', 'TMP', 'TEMP')",
+                "Path(os.environ['IMP_TEST_OBSERVATION']).write_text(",
+                "    ''.join(f'{name}={os.environ[name]}\\n' for name in names), encoding='ascii'",
+                ")",
+                "(Path(os.environ['GRADIO_TEMP_DIR']) / 'owned.tmp').write_text('temporary', encoding='ascii')",
+            ]
+        )
+    body.append("raise SystemExit(int(os.environ.get('IMP_TEST_APP_EXIT', '0')))")
+    path.write_text("\n".join(body) + "\n", encoding="ascii")
+    path.chmod(0o755)
+    return path
+
+
 def _cloudflared_pids() -> set[int]:
     result = subprocess.run(
         [
@@ -152,6 +201,8 @@ def test_demo_runbook_documents_locked_and_fixed_cache_modes() -> None:
     ):
         assert token.lower() in readme.lower()
     assert "cloudflared tunnel --url http://127.0.0.1:7860" in readme
+    assert "provider-bound train-screen gt checkbox enables metrics" in readme.lower()
+    assert "ground-truth upload enables metrics" not in readme.lower()
     assert not re.search(r"(?<![A-Za-z])[A-Za-z]:[\\/]", readme)
 
 
@@ -198,19 +249,8 @@ def test_run_demo_removes_only_owned_session_and_restores_environment(
     runtime.mkdir()
     sentinel = runtime / "sibling-sentinel.txt"
     sentinel.write_text("preserve", encoding="ascii")
-    fake_python = tmp_path / "python.cmd"
+    fake_python = _fake_python(tmp_path, capture_environment=True)
     observation = tmp_path / "app-env.txt"
-    fake_python.write_text(
-        "@echo off\n"
-        "if \"%1\"==\"-\" echo preflight=passed & exit /b 0\n"
-        "> \"%IMP_TEST_OBSERVATION%\" echo GRADIO_TEMP_DIR=%GRADIO_TEMP_DIR%\n"
-        ">> \"%IMP_TEST_OBSERVATION%\" echo IMP_LOOP206_DEMO_SESSION=%IMP_LOOP206_DEMO_SESSION%\n"
-        ">> \"%IMP_TEST_OBSERVATION%\" echo TMP=%TMP%\n"
-        ">> \"%IMP_TEST_OBSERVATION%\" echo TEMP=%TEMP%\n"
-        "> \"%GRADIO_TEMP_DIR%\\owned.tmp\" echo temporary\n"
-        "exit /b 0\n",
-        encoding="ascii",
-    )
     command = (
         f". '{_powershell_literal(script)}'; "
         "$env:GRADIO_TEMP_DIR='before-gradio'; $env:TMP='before-tmp'; "
@@ -339,13 +379,7 @@ def test_cleanup_failure_is_nonzero_and_preserves_existing_app_failure(
 ) -> None:
     root = tmp_path / "repo"
     (root / "demo_runtime").mkdir(parents=True)
-    fake_python = tmp_path / "python.cmd"
-    fake_python.write_text(
-        "@echo off\n"
-        "if \"%1\"==\"-\" echo preflight=passed & exit /b 0\n"
-        "exit /b %IMP_TEST_APP_EXIT%\n",
-        encoding="ascii",
-    )
+    fake_python = _fake_python(tmp_path)
     script = ROOT / "scripts/demo/run_demo.ps1"
     command = (
         f". '{_powershell_literal(script)}'; "

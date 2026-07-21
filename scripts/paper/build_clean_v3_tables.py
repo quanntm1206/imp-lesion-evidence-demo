@@ -55,7 +55,7 @@ def _clean_v3_table(registry: Mapping[str, Any]) -> str:
     return rf"""
 \begin{{table*}}[t]
 \centering
-\caption{{Clean-v3 validation point estimates under the older geometry contract. Both rows are single-run validation evidence; no confidence interval or protected-test result is available.}}
+\caption{{Clean-v3 adaptive development-validation point estimates under the older geometry contract. Both rows are single-run, selection-optimistic evidence; no confidence interval or protected-test result is available.}}
 \label{{tab:clean-v3-validation}}
 \begin{{tabular}}{{lrrrrr}}
 \toprule
@@ -75,7 +75,7 @@ def _loop206_table(registry: Mapping[str, Any]) -> str:
     return rf"""
 \begin{{table}}[t]
 \centering
-\caption{{Loop206 contour-channel minus zero-channel control on the train-screen protocol with three paired seeds, 76 groups, and 10,000 cluster-bootstrap resamples.}}
+\caption{{Loop206 contour-channel minus zero-channel control on the train-screen protocol. After averaging three selected seeds and three views, 10,000 bootstrap resamples draw 76 groups as whole split-group clusters; the interval is conditional on those seeds.}}
 \label{{tab:loop206-ablation}}
 \begin{{tabular}}{{lrr}}
 \toprule
@@ -122,13 +122,14 @@ def _scope_table() -> str:
 \centering
 \caption{Evidence hierarchy used throughout this report.}
 \label{tab:evidence-scope}
-\begin{tabular}{llll}
+\small
+\begin{tabular}{p{0.20\textwidth}p{0.20\textwidth}p{0.22\textwidth}p{0.22\textwidth}}
 \toprule
 Evidence class & Dataset/partition & Allowed use & Prohibited claim \\
 \midrule
-\texttt{protected\_validation} & Clean-v3 validation & bounded model comparison & protected-test superiority \\
-\texttt{train\_screen} & Clean-v3 train-screen & controlled hypothesis rejection & generalization \\
-\texttt{legacy\_patient\_contaminated} & Clean-v2 test-v2 & historical context & scientific ranking \\
+\path{protected_validation} & Clean-v3 validation & bounded model comparison & protected-test superiority \\
+\path{train_screen} & Clean-v3 train-screen & controlled hypothesis rejection & generalization \\
+\path{legacy_patient_contaminated} & Clean-v2 test-v2 & historical context & scientific ranking \\
 \bottomrule
 \end{tabular}
 \end{table*}

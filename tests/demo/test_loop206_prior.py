@@ -487,6 +487,37 @@ def test_dataset_index_rejects_path_escape(tmp_path: Path) -> None:
         prior_module.load_dataset_index(path, dataset_roots=[root])
 
 
+def test_indexed_mask_hash_and_decode_use_one_captured_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PIL import Image
+
+    image_path = tmp_path / "image.png"
+    mask_path = tmp_path / "mask.png"
+    image = np.arange(4 * 5 * 3, dtype=np.uint8).reshape(4, 5, 3)
+    mask = np.zeros((4, 5), dtype=np.uint8)
+    mask[1:3, 2:4] = 1
+    Image.fromarray(image, mode="RGB").save(image_path)
+    Image.fromarray(mask * 255, mode="L").save(mask_path)
+    image_snapshot = prior_module.ImmutableSnapshot.read(image_path)
+    mask_snapshot = prior_module.ImmutableSnapshot.read(mask_path)
+    row = {
+        "sample_id": "sample",
+        "sha256_raw": image_snapshot.sha256,
+        "sha256_rgb": image_snapshot.decoded_rgb_sha256(image),
+        "mask_sha256_raw": mask_snapshot.sha256,
+        "mask_sha256_binary": mask_snapshot.decoded_binary_mask_sha256(mask),
+    }
+    _replace_after_first_binary_read(monkeypatch, mask_path, b"replacement")
+
+    loaded_image, loaded_mask = prior_module._load_verified_indexed_pair(
+        image_path, mask_path, row
+    )
+
+    np.testing.assert_array_equal(loaded_image, image)
+    np.testing.assert_array_equal(loaded_mask, mask)
+
+
 def _passed_receipt(prior, artifact: Path) -> dict:
     payload = {
         "schema_version": prior_module.RECEIPT_SCHEMA,
@@ -526,7 +557,11 @@ def test_deployment_loader_binds_passed_receipt(
     save_prior(prior, artifact)
     receipt = tmp_path / "receipt.json"
     receipt.write_text(json.dumps(_passed_receipt(prior, artifact)), encoding="ascii")
-    loaded = prior_module.load_deployment_prior(artifact, receipt)
+    loaded = prior_module.load_deployment_prior(
+        artifact,
+        receipt,
+        expected_receipt_sha256=hashlib.sha256(receipt.read_bytes()).hexdigest(),
+    )
     assert loaded.parity_passed is True
 
 
@@ -541,10 +576,13 @@ def test_deployment_receipt_hash_describes_the_loaded_receipt_bytes(
     receipt = tmp_path / "receipt.json"
     receipt.write_text(json.dumps(_passed_receipt(prior, artifact)), encoding="ascii")
     expected_receipt_bytes = receipt.read_bytes()
+    expected_receipt_sha256 = hashlib.sha256(expected_receipt_bytes).hexdigest()
     _replace_after_first_binary_read(monkeypatch, receipt, b'{"status":"replaced"}')
 
     loaded, receipt_sha256 = prior_module.load_deployment_prior_with_receipt_hash(
-        artifact, receipt
+        artifact,
+        receipt,
+        expected_receipt_sha256=expected_receipt_sha256,
     )
 
     assert loaded.parity_passed is True
@@ -573,7 +611,38 @@ def test_deployment_loader_rejects_forged_receipt(
     receipt = tmp_path / "receipt.json"
     receipt.write_text(json.dumps(payload), encoding="ascii")
     with pytest.raises(ValueError, match=forgery):
-        prior_module.load_deployment_prior(artifact, receipt)
+        prior_module.load_deployment_prior(
+            artifact,
+            receipt,
+            expected_receipt_sha256=hashlib.sha256(receipt.read_bytes()).hexdigest(),
+        )
+
+
+def test_receipt_pin_mismatch_prevents_parse_and_unpickle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    receipt = tmp_path / "receipt.json"
+    artifact = tmp_path / "prior.joblib"
+    receipt.write_text('{"status":"forged"}', encoding="ascii")
+    artifact.write_bytes(b"forged-prior")
+    effects: list[str] = []
+    monkeypatch.setattr(
+        prior_module,
+        "_load_passed_receipt",
+        lambda *_args, **_kwargs: effects.append("parsed"),
+    )
+    import joblib
+
+    monkeypatch.setattr(joblib, "load", lambda *_args, **_kwargs: effects.append("unpickled"))
+
+    with pytest.raises(ValueError, match="receipt SHA256"):
+        prior_module.load_deployment_prior_with_receipt_hash(
+            artifact,
+            receipt,
+            expected_receipt_sha256="0" * 64,
+        )
+
+    assert effects == []
 
 
 def test_receipt_publish_race_rolls_back_own_artifact(

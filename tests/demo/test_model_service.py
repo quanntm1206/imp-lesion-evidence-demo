@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import fields
+import builtins
 import hashlib
 import inspect
 import json
@@ -106,9 +107,16 @@ def _authorized_prior(
     monkeypatch.setattr(
         module,
         "load_deployment_prior_with_receipt_hash",
-        lambda *_args: (FakePrior(), hashlib.sha256(receipt.read_bytes()).hexdigest()),
+        lambda *_args, **_kwargs: (
+            FakePrior(),
+            hashlib.sha256(receipt.read_bytes()).hexdigest(),
+        ),
     )
-    return load_receipt_authorized_prior(tmp_path / "prior.joblib", receipt)
+    return load_receipt_authorized_prior(
+        tmp_path / "prior.joblib",
+        receipt,
+        expected_receipt_sha256=hashlib.sha256(receipt.read_bytes()).hexdigest(),
+    )
 
 
 def test_arbitrary_comparison_fails_closed_before_inference_without_receipt(
@@ -203,6 +211,9 @@ def test_fixed_result_metadata_uses_an_explicit_allowlist() -> None:
         candidate_data_sha256="2" * 64,
         zero_manifest_sha256="3" * 64,
         zero_data_sha256="4" * 64,
+        mask_sha256_raw="5" * 64,
+        mask_sha256_binary="6" * 64,
+        mask_sha256_runtime="7" * 64,
         historical_cache_provenance_drift=True,
         metadata={"local_path": "C:/private", "comparison_source": "forged"},
     )
@@ -218,6 +229,9 @@ def test_fixed_result_metadata_uses_an_explicit_allowlist() -> None:
         "candidate_data_sha256": "2" * 64,
         "zero_manifest_sha256": "3" * 64,
         "zero_data_sha256": "4" * 64,
+        "mask_sha256_raw": "5" * 64,
+        "mask_sha256_binary": "6" * 64,
+        "mask_sha256_runtime": "7" * 64,
         "historical_cache_provenance_drift": True,
     }
 
@@ -296,6 +310,14 @@ def test_checkpoint_hash_and_torch_load_use_the_same_captured_bytes(
         return endpoint, preprocessing, {"low_contrast": {"factor": 0.5}}
 
     monkeypatch.setattr(module, "_load_torch_endpoint", fake_load)
+    original_import = builtins.__import__
+
+    def reject_eager_torch(name, *args, **kwargs):
+        if name == "torch":
+            raise ModuleNotFoundError("torch is intentionally unavailable")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", reject_eager_torch)
 
     loaded = module.load_model_registry(
         registry,
@@ -309,6 +331,7 @@ def test_checkpoint_hash_and_torch_load_use_the_same_captured_bytes(
     assert loaded_bytes[payload["control"]["model_id"]] == control_bytes
     assert loaded_bytes[payload["candidate"]["model_id"]] == candidate_bytes
     assert loaded.control.checkpoint_sha256 == hashlib.sha256(control_bytes).hexdigest()
+    assert loaded.prior is None
 
 
 @pytest.mark.parametrize(
@@ -319,6 +342,7 @@ def test_checkpoint_hash_and_torch_load_use_the_same_captured_bytes(
         lambda value: value["candidate"].update(checkpoint_sha256="0" * 64),
         lambda value: value["control"].update(checkpoint_env="FORGED_CONTROL"),
         lambda value: value.update(prior_env="FORGED_PRIOR"),
+        lambda value: value.update(prior_receipt_sha256="a" * 64),
     ],
 )
 def test_registry_rejects_mutable_authority_before_environment_resolution(
@@ -339,6 +363,116 @@ def test_registry_rejects_mutable_authority_before_environment_resolution(
 
 def test_model_endpoint_contract_is_runtime_checkable(endpoints: tuple[FakeModel, FakeModel]) -> None:
     assert isinstance(endpoints[0], ModelEndpoint)
+
+
+def test_release_without_approved_receipt_pin_rejects_configured_prior_before_loader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import lesion_robustness.demo.model_service as module
+
+    control = tmp_path / "control.pt"
+    candidate = tmp_path / "candidate.pt"
+    control.write_bytes(b"control")
+    candidate.write_bytes(b"candidate")
+    payload = deepcopy(module.PINNED_REGISTRY)
+    payload["control"]["checkpoint_sha256"] = hashlib.sha256(b"control").hexdigest()
+    payload["candidate"]["checkpoint_sha256"] = hashlib.sha256(b"candidate").hexdigest()
+    payload["prior_receipt_sha256"] = None
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps(payload), encoding="ascii")
+    monkeypatch.setattr(module, "PINNED_REGISTRY", payload)
+
+    def fake_endpoint(_snapshot, *, model_id, checkpoint_sha256, device, seed):
+        endpoint = FakeModel(model_id)
+        endpoint.checkpoint_sha256 = checkpoint_sha256
+        role = "control" if model_id == payload["control"]["model_id"] else "candidate"
+        preprocessing = {
+            "extra_channel": {
+                "enabled": True,
+                "type": "loop206_contour_cache",
+                "require_input_sha256": True,
+                "cache_manifest": f"pilot_cache_v2_{'zero_control' if role == 'control' else 'candidate'}/manifest.json",
+            }
+        }
+        return endpoint, preprocessing, {"low_contrast": {"factor": 0.5}}
+
+    monkeypatch.setattr(module, "_load_torch_endpoint", fake_endpoint)
+    effects: list[str] = []
+    monkeypatch.setattr(
+        module,
+        "load_receipt_authorized_prior",
+        lambda *_args, **_kwargs: effects.append("loaded"),
+    )
+
+    with pytest.raises(ValueError, match="disabled by the pinned registry"):
+        module.load_model_registry(
+            registry,
+            environ={
+                payload["control"]["checkpoint_env"]: str(control),
+                payload["candidate"]["checkpoint_env"]: str(candidate),
+                payload["prior_env"]: str(tmp_path / "forged.joblib"),
+                payload["prior_receipt_env"]: str(tmp_path / "forged.json"),
+            },
+            device="cpu",
+        )
+
+    assert effects == []
+
+
+def test_registry_passes_exact_approved_receipt_pin_to_prior_loader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import lesion_robustness.demo.model_service as module
+
+    control = tmp_path / "control.pt"
+    candidate = tmp_path / "candidate.pt"
+    control.write_bytes(b"control")
+    candidate.write_bytes(b"candidate")
+    payload = deepcopy(module.PINNED_REGISTRY)
+    payload["control"]["checkpoint_sha256"] = hashlib.sha256(b"control").hexdigest()
+    payload["candidate"]["checkpoint_sha256"] = hashlib.sha256(b"candidate").hexdigest()
+    payload["prior_receipt_sha256"] = "9" * 64
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps(payload), encoding="ascii")
+    monkeypatch.setattr(module, "PINNED_REGISTRY", payload)
+
+    def fake_endpoint(_snapshot, *, model_id, checkpoint_sha256, device, seed):
+        endpoint = FakeModel(model_id)
+        endpoint.checkpoint_sha256 = checkpoint_sha256
+        role = "control" if model_id == payload["control"]["model_id"] else "candidate"
+        preprocessing = {
+            "extra_channel": {
+                "enabled": True,
+                "type": "loop206_contour_cache",
+                "require_input_sha256": True,
+                "cache_manifest": f"pilot_cache_v2_{'zero_control' if role == 'control' else 'candidate'}/manifest.json",
+            }
+        }
+        return endpoint, preprocessing, {"low_contrast": {"factor": 0.5}}
+
+    monkeypatch.setattr(module, "_load_torch_endpoint", fake_endpoint)
+    observed: list[str] = []
+    authorized = SimpleNamespace(receipt_sha256="9" * 64)
+
+    def fake_prior(_artifact, _receipt, *, expected_receipt_sha256):
+        observed.append(expected_receipt_sha256)
+        return authorized
+
+    monkeypatch.setattr(module, "load_receipt_authorized_prior", fake_prior)
+
+    loaded = module.load_model_registry(
+        registry,
+        environ={
+            payload["control"]["checkpoint_env"]: str(control),
+            payload["candidate"]["checkpoint_env"]: str(candidate),
+            payload["prior_env"]: str(tmp_path / "prior.joblib"),
+            payload["prior_receipt_env"]: str(tmp_path / "receipt.json"),
+        },
+        device="cpu",
+    )
+
+    assert loaded.prior is authorized
+    assert observed == ["9" * 64]
 
 
 def test_registry_accepts_only_the_expected_arm_specific_cache_manifest() -> None:

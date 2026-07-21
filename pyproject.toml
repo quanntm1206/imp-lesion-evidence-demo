@@ -36,13 +36,6 @@ demo = [
 ]
 
 [project.scripts]
-lesion-classical = "lesion_robustness.classical_baseline:main"
-lesion-cache-dataset = "lesion_robustness.cache_dataset:main"
-lesion-evaluate = "lesion_robustness.evaluate:main"
-lesion-preprocess-search = "lesion_robustness.preprocessing_experiments:main"
-lesion-research-gap = "lesion_robustness.research_gap_analysis:main"
-lesion-train = "lesion_robustness.train:main"
-lesion-tune-threshold = "lesion_robustness.threshold_tuning:main"
 lesion-demo = "lesion_robustness.demo.app:main"
 lesion-build-evidence = "lesion_robustness.evidence_registry:main"
 

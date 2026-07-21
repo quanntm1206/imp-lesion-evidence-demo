@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from lesion_robustness.data_manifest import sha256_file, sha256_rgb
-from lesion_robustness.demo.data_index import resolve_loop206_rows
+from lesion_robustness.demo.data_index import build_index_payload, resolve_loop206_rows
 
 
 FIELDS = (
@@ -73,6 +73,11 @@ def test_resolver_matches_basename_and_both_hashes(tmp_path: Path) -> None:
     assert rows[0].image_path == image.resolve()
     assert rows[0].mask_path == mask.resolve()
     assert rows[0].role == "holdout"
+    assert len(rows[0].mask_sha256_raw) == 64
+    assert len(rows[0].mask_sha256_binary) == 64
+    payload = build_index_payload(rows, [dataset])
+    assert payload["rows"][0]["mask_sha256_raw"] == rows[0].mask_sha256_raw
+    assert payload["rows"][0]["mask_sha256_binary"] == rows[0].mask_sha256_binary
 
 
 def test_resolver_rejects_hash_mismatch(tmp_path: Path) -> None:

@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 from threading import Lock
 from time import perf_counter
 from typing import Any, Callable, Mapping, Protocol, runtime_checkable
@@ -45,6 +46,7 @@ PINNED_REGISTRY = {
     },
     "prior_env": "IMP_LOOP206_PRIOR",
     "prior_receipt_env": "IMP_LOOP206_PRIOR_RECEIPT",
+    "prior_receipt_sha256": None,
 }
 
 
@@ -167,10 +169,15 @@ def _sha256_file(path: Path, *, chunk_size: int = 1 << 20) -> str:
 
 
 def load_receipt_authorized_prior(
-    artifact_path: str | Path, receipt_path: str | Path
+    artifact_path: str | Path,
+    receipt_path: str | Path,
+    *,
+    expected_receipt_sha256: str,
 ) -> ReceiptAuthorizedPrior:
     prior, receipt_hash = load_deployment_prior_with_receipt_hash(
-        artifact_path, receipt_path
+        artifact_path,
+        receipt_path,
+        expected_receipt_sha256=expected_receipt_sha256,
     )
     return ReceiptAuthorizedPrior(prior, receipt_hash, _AUTHORIZATION_TOKEN)
 
@@ -217,6 +224,9 @@ def _fixed_public_metadata(fixed: Any) -> dict[str, Any]:
         "candidate_data_sha256": str(fixed.candidate_data_sha256),
         "zero_manifest_sha256": str(fixed.zero_manifest_sha256),
         "zero_data_sha256": str(fixed.zero_data_sha256),
+        "mask_sha256_raw": str(fixed.mask_sha256_raw),
+        "mask_sha256_binary": str(fixed.mask_sha256_binary),
+        "mask_sha256_runtime": str(fixed.mask_sha256_runtime),
         "historical_cache_provenance_drift": bool(
             fixed.historical_cache_provenance_drift
         ),
@@ -582,7 +592,7 @@ def _validate_pinned_registry(payload: object) -> dict[str, Any]:
         spec = payload.get(role)
         if not isinstance(spec, dict) or spec != PINNED_REGISTRY[role]:
             raise ValueError("Loop206 pinned model registry mismatch")
-    for field in ("prior_env", "prior_receipt_env"):
+    for field in ("prior_env", "prior_receipt_env", "prior_receipt_sha256"):
         if payload.get(field) != PINNED_REGISTRY[field]:
             raise ValueError("Loop206 pinned model registry mismatch")
     return payload
@@ -619,9 +629,12 @@ def load_model_registry(
             raise ValueError(f"Loop206 {role} checkpoint hash mismatch")
         resolved[role] = (spec, checkpoint_snapshot)
 
-    import torch
+    if device is None:
+        import torch
 
-    selected_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        selected_device = "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        selected_device = device
     control, control_preprocessing, control_corruptions = _load_torch_endpoint(
         resolved["control"][1],
         model_id=str(resolved["control"][0]["model_id"]),
@@ -648,11 +661,18 @@ def load_model_registry(
     receipt_value = str(environment.get(receipt_env, "")) if receipt_env else ""
     if bool(prior_value) != bool(receipt_value):
         raise ValueError("Loop206 prior artifact and receipt must be configured together")
-    prior = (
-        load_receipt_authorized_prior(prior_value, receipt_value)
-        if prior_value and receipt_value
-        else None
-    )
+    prior = None
+    if prior_value and receipt_value:
+        expected_receipt_sha256 = payload.get("prior_receipt_sha256")
+        if not isinstance(expected_receipt_sha256, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", expected_receipt_sha256
+        ):
+            raise ValueError("Loop206 prior loading is disabled by the pinned registry")
+        prior = load_receipt_authorized_prior(
+            prior_value,
+            receipt_value,
+            expected_receipt_sha256=expected_receipt_sha256,
+        )
     return LoadedModelRegistry(
         control,
         candidate,

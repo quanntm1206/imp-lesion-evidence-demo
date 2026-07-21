@@ -173,6 +173,8 @@ def test_audit_allows_declared_dice_delta_in_delta_context(tmp_path: Path) -> No
         "Loop192 nnU-Net v2 protected-validation robust Dice was 0.895870479294128.",
         "ResNet protected-validation robust Dice was 0.895870479294128.",
         "ResNet50 protected-validation robust Dice was 0.895870479294128.",
+        "resnet protected-validation robust Dice was 0.895870479294128.",
+        "resnet robust Dice was 0.895870479294128.",
         "Loop191 IMP-SegFormer-B3 clean Dice was 0.895870479294128.",
         "Loop206 train-screen robust Dice was 0.895870479294128.",
         "Under protected-validation evidence, robust Dice was 0.8913.",
@@ -377,6 +379,89 @@ def test_audit_rejects_metrics_without_ground_truth_authorization(
     assert "hidden no-GT metrics" in result.errors
 
 
+def test_audit_rejects_metrics_without_per_sample_mask_binding(
+    tmp_path: Path,
+) -> None:
+    paper = _copy_paper(tmp_path)
+    bundle = paper / "figures/qualitative_demo_receipts.json"
+    payload = json.loads(bundle.read_text(encoding="ascii"))
+    payload["receipts"][0].pop("ground_truth_binding")
+    bundle.write_text(json.dumps(payload), encoding="ascii")
+
+    result = audit_paper(paper, REGISTRY)
+
+    assert not result.passed
+    assert "unbound demo ground truth" in result.errors
+    assert "unbound demo mask authorization" in result.errors
+
+
+def test_audit_rejects_qualitative_receipt_without_metrics(tmp_path: Path) -> None:
+    paper = _copy_paper(tmp_path)
+    bundle = paper / "figures/qualitative_demo_receipts.json"
+    payload = json.loads(bundle.read_text(encoding="ascii"))
+    payload["receipts"][0].pop("metrics")
+    bundle.write_text(json.dumps(payload), encoding="ascii")
+
+    result = audit_paper(paper, REGISTRY)
+
+    assert "missing demo metrics" in result.errors
+
+
+def test_audit_rejects_qualitative_authorization_count_mismatch(
+    tmp_path: Path,
+) -> None:
+    paper = _copy_paper(tmp_path)
+    bundle = paper / "figures/qualitative_demo_receipts.json"
+    payload = json.loads(bundle.read_text(encoding="ascii"))
+    payload["display_authorization"]["authorized_sample_count"] = 4
+    bundle.write_text(json.dumps(payload), encoding="ascii")
+
+    result = audit_paper(paper, REGISTRY)
+
+    assert "demo authorization count mismatch" in result.errors
+
+
+def test_audit_rejects_missing_aggregate_mask_binding(tmp_path: Path) -> None:
+    paper = _copy_paper(tmp_path)
+    bundle = paper / "figures/qualitative_demo_receipts.json"
+    payload = json.loads(bundle.read_text(encoding="ascii"))
+    payload["display_authorization"].pop("mask_bindings_sha256")
+    bundle.write_text(json.dumps(payload), encoding="ascii")
+
+    result = audit_paper(paper, REGISTRY)
+
+    assert not result.passed
+    assert "unbound demo mask authorization" in result.errors
+
+
+def test_manuscript_discloses_statistical_and_reproducibility_limits() -> None:
+    manuscript = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(PAPER.rglob("*.tex"))
+    )
+    reproducibility = (PAPER / "sections/09_reproducibility.tex").read_text(
+        encoding="utf-8"
+    )
+    normalized = manuscript.lower()
+
+    assert "after averaging the three selected seeds and three views" in normalized
+    assert "does not estimate variability over seed selection" in normalized
+    assert "one slightly positive and two negative" in normalized
+    assert "adaptive development and checkpoint-selection validation" in normalized
+    assert "across three paired seeds" not in normalized
+    assert "not tracked in this release" in reproducibility
+    assert "no tracked, commit-bound receipt" in reproducibility
+
+
+def test_qualitative_ground_truth_claim_names_each_hash_authority() -> None:
+    results = (PAPER / "sections/06_results.tex").read_text(encoding="utf-8").lower()
+
+    assert "provenance manifest verifies source identity" in results
+    assert "raw and decoded image hashes" in results
+    assert "mask bytes are separately bound to the pinned dataset index" in results
+    assert "image and mask hashes" not in results
+
+
 def test_audit_rejects_affirmative_clause_after_negated_clause(tmp_path: Path) -> None:
     paper = make_minimal_paper(
         tmp_path, "The baseline is not SOTA, but ours is state-of-the-art."
@@ -392,12 +477,41 @@ def test_audit_binds_negation_to_the_matched_claim_predicate(tmp_path: Path) -> 
         "No test was opened and our model is state of the art.",
         "No test was opened and we are state of the art.",
         "No test was opened and our model remains state of the art.",
+        "Our method is not diagnostic and the model is state of the art.",
     )):
         case = tmp_path / f"case-{index}"
         case.mkdir()
         result = audit_paper(make_minimal_paper(case, claim), REGISTRY)
 
         assert any("affirmative protected claim" in error for error in result.errors)
+
+
+def test_audit_rejects_affirmative_modal_predicate_after_negated_claim(
+    tmp_path: Path,
+) -> None:
+    result = audit_paper(
+        make_minimal_paper(
+            tmp_path,
+            "The report does not claim diagnostic use and is state of the art.",
+        ),
+        REGISTRY,
+    )
+
+    assert any("affirmative protected claim" in error for error in result.errors)
+
+
+def test_audit_rejects_affirmative_claim_by_possessive_pronoun_subject(
+    tmp_path: Path,
+) -> None:
+    result = audit_paper(
+        make_minimal_paper(
+            tmp_path,
+            "No method is diagnostic and ours is state of the art.",
+        ),
+        REGISTRY,
+    )
+
+    assert any("affirmative protected claim" in error for error in result.errors)
 
 
 def test_pdf_page_count_uses_pdfinfo_not_raw_pdf_tokens(
@@ -436,13 +550,90 @@ def test_audit_rejects_affirmative_claim_after_subordinate_negation(
     "claim",
     [
         "No method, including ours, is state-of-the-art.",
-        "This is not clinical-grade, diagnostic, or intended for clinical use.",
+        "No method is diagnostic or state-of-the-art.",
+        "No contribution is a clinical system or a state-of-the-art claim.",
+        "No contribution is a clinical system or the state-of-the-art system.",
+        "No baseline is diagnostic and ResNet is not state-of-the-art.",
+        "The baseline is not diagnostic and ours does not claim state-of-the-art performance.",
+        "This is not clinical-grade, is not diagnostic, and is not intended for clinical use.",
     ],
 )
 def test_audit_allows_coordinated_negated_claims(tmp_path: Path, claim: str) -> None:
     result = audit_paper(make_minimal_paper(tmp_path, claim), REGISTRY)
 
     assert not any("affirmative protected claim" in error for error in result.errors)
+
+
+@pytest.mark.parametrize(
+    "identity",
+    [
+        "ResNet",
+        "resnet",
+        "the ResNet model",
+        r"\impmodel{}",
+        "ours",
+        "an-unregistered-system",
+    ],
+)
+def test_coordination_claim_scope_is_identity_agnostic(
+    tmp_path: Path, identity: str
+) -> None:
+    affirmative_root = tmp_path / "affirmative"
+    negated_root = tmp_path / "negated"
+    affirmative_root.mkdir()
+    negated_root.mkdir()
+    affirmative = audit_paper(
+        make_minimal_paper(
+            affirmative_root,
+            f"No baseline is diagnostic and {identity} is state of the art.",
+        ),
+        REGISTRY,
+    )
+    locally_negated = audit_paper(
+        make_minimal_paper(
+            negated_root,
+            f"No baseline is diagnostic and {identity} is not state of the art.",
+        ),
+        REGISTRY,
+    )
+
+    assert any("affirmative protected claim" in error for error in affirmative.errors)
+    assert not any(
+        "affirmative protected claim" in error for error in locally_negated.errors
+    )
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "No baseline is diagnostic and Model-Z qualifies as state of the art.",
+        "No baseline is diagnostic and ResNet is considered state of the art.",
+        "No baseline is diagnostic and Model-Z unexpectedly became state of the art.",
+    ],
+)
+def test_coordination_claim_scope_fails_closed_for_unknown_predicates(
+    tmp_path: Path, claim: str
+) -> None:
+    result = audit_paper(make_minimal_paper(tmp_path, claim), REGISTRY)
+
+    assert any("affirmative protected claim" in error for error in result.errors)
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "No baseline is diagnostic and family model is state of the art.",
+        "No baseline is diagnostic and family state of the art.",
+        "No baseline is diagnostic and ally state of the art.",
+        "No baseline is diagnostic and supply state of the art.",
+    ],
+)
+def test_coordination_claim_scope_treats_ly_nouns_as_substantive(
+    tmp_path: Path, claim: str
+) -> None:
+    result = audit_paper(make_minimal_paper(tmp_path, claim), REGISTRY)
+
+    assert any("affirmative protected claim" in error for error in result.errors)
 
 
 @pytest.mark.parametrize(

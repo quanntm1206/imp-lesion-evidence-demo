@@ -6,8 +6,7 @@ import json
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from lesion_robustness.data_manifest import sha256_file, sha256_rgb
-from lesion_robustness.image_utils import read_mask, read_rgb
+from lesion_robustness.demo.immutable_io import ImmutableSnapshot
 
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
@@ -26,6 +25,8 @@ class ResolvedRow:
     mask_path: Path
     sha256_raw: str
     sha256_rgb: str
+    mask_sha256_raw: str
+    mask_sha256_binary: str
 
 
 def _read_manifest(path: Path) -> list[dict[str, str]]:
@@ -48,12 +49,13 @@ def _file_index(roots: Sequence[Path]) -> dict[str, list[Path]]:
     return index
 
 
-def _verified_image(candidates: Iterable[Path], raw_hash: str, rgb_hash: str) -> Path:
-    matched = [
-        path
-        for path in candidates
-        if sha256_file(path) == raw_hash and sha256_rgb(path) == rgb_hash
-    ]
+def _verified_image(candidates: Iterable[Path], raw_hash: str, rgb_hash: str):
+    matched = []
+    for path in candidates:
+        snapshot = ImmutableSnapshot.read(path)
+        image = snapshot.decode_rgb()
+        if snapshot.sha256 == raw_hash and snapshot.decoded_rgb_sha256(image) == rgb_hash:
+            matched.append((path, image))
     if len(matched) != 1:
         raise ValueError(
             "Loop206 row requires one unique hash-verified image; "
@@ -62,11 +64,14 @@ def _verified_image(candidates: Iterable[Path], raw_hash: str, rgb_hash: str) ->
     return matched[0]
 
 
-def _unique_mask(candidates: Iterable[Path]) -> Path:
+def _unique_mask(candidates: Iterable[Path]):
     matched = list(candidates)
     if len(matched) != 1:
         raise ValueError(f"Loop206 row requires one unique mask; found {len(matched)}")
-    return matched[0]
+    path = matched[0]
+    snapshot = ImmutableSnapshot.read(path)
+    mask = snapshot.decode_binary_mask()
+    return path, snapshot, mask
 
 
 def _validate_manifest_contract(rows: list[dict[str, str]], expected_rows: int) -> None:
@@ -107,14 +112,12 @@ def resolve_loop206_rows(
     for row in rows:
         image_name = Path(row["image_path"]).name.lower()
         mask_name = Path(row["mask_path"]).name.lower()
-        image_path = _verified_image(
+        image_path, image = _verified_image(
             index.get(image_name, []),
             row.get("sha256_raw", "").strip().lower(),
             row.get("sha256_rgb", "").strip().lower(),
         )
-        mask_path = _unique_mask(index.get(mask_name, []))
-        image = read_rgb(image_path)
-        mask = read_mask(mask_path)
+        mask_path, mask_snapshot, mask = _unique_mask(index.get(mask_name, []))
         if image.shape[:2] != mask.shape or not mask.any() or mask.all():
             raise ValueError(f"Loop206 image/mask geometry is invalid for {image_name}")
         try:
@@ -136,6 +139,8 @@ def resolve_loop206_rows(
                 mask_path=mask_path,
                 sha256_raw=row.get("sha256_raw", "").strip().lower(),
                 sha256_rgb=row.get("sha256_rgb", "").strip().lower(),
+                mask_sha256_raw=mask_snapshot.sha256,
+                mask_sha256_binary=mask_snapshot.decoded_binary_mask_sha256(mask),
             )
         )
     return resolved

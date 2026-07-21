@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import io
 import json
 from pathlib import Path
 from typing import Sequence
@@ -12,9 +13,10 @@ from typing import Sequence
 import numpy as np
 
 from lesion_robustness.demo.app import run_fixed_comparison
+from lesion_robustness.demo.immutable_io import ImmutableSnapshot
+from lesion_robustness.demo.loop206_prior import load_dataset_index
 from lesion_robustness.demo.model_service import load_model_registry
 from lesion_robustness.evidence_registry import validate_registry
-from lesion_robustness.image_utils import read_mask, resize_image_and_mask
 
 
 PROVENANCE_MANIFEST_SHA256 = (
@@ -45,12 +47,16 @@ def _safe_path(root: Path, relative: object) -> Path:
     return path
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def _is_sha256(value: object) -> bool:
+    text = str(value)
+    return len(text) == 64 and all(character in "0123456789abcdef" for character in text)
+
+
+def _canonical_hash(value: object) -> str:
+    encoded = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
+    ).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def load_display_authorization(
@@ -60,14 +66,16 @@ def load_display_authorization(
     expected_sha256: str = PROVENANCE_MANIFEST_SHA256,
 ) -> dict[str, object]:
     path = Path(provenance_manifest)
-    actual_sha256 = _sha256_file(path)
+    snapshot = ImmutableSnapshot.read(path)
+    actual_sha256 = snapshot.sha256
     if actual_sha256 != expected_sha256:
         raise ValueError("qualitative provenance manifest hash mismatch")
-    with path.open(encoding="utf-8", newline="") as handle:
+    with io.StringIO(snapshot.text("utf-8"), newline="") as handle:
         provenance_rows = list(csv.DictReader(handle))
     if len(selected_rows) != 3:
         raise ValueError("qualitative provenance authorization requires three samples")
 
+    mask_bindings: list[dict[str, str]] = []
     for selected in selected_rows:
         sample_id = str(selected.get("sample_id", ""))
         matches = [row for row in provenance_rows if row.get("isic_image_id") == sample_id]
@@ -91,6 +99,18 @@ def load_display_authorization(
             or provenance.get("sha256_rgb") != selected.get("sha256_rgb")
         ):
             raise ValueError("qualitative provenance image hash binding mismatch")
+        mask_sha256_raw = str(selected.get("mask_sha256_raw", ""))
+        mask_sha256_binary = str(selected.get("mask_sha256_binary", ""))
+        if not _is_sha256(mask_sha256_raw) or not _is_sha256(mask_sha256_binary):
+            raise ValueError("qualitative provenance mask hash binding mismatch")
+        mask_bindings.append(
+            {
+                "group_key": str(selected.get("group_key", "")),
+                "sample_id": sample_id,
+                "mask_sha256_raw": mask_sha256_raw,
+                "mask_sha256_binary": mask_sha256_binary,
+            }
+        )
 
     return {
         "schema_version": "loop206.qualitative_display_authorization.v1",
@@ -99,35 +119,18 @@ def load_display_authorization(
         "image_license": "CC-0",
         "mask_variant": "challenge_ground_truth",
         "identity_field": "isic_image_id",
-        "hash_binding": "sha256_raw+sha256_rgb",
+        "hash_binding": "sha256_raw+sha256_rgb+mask_sha256_raw+mask_sha256_binary",
+        "mask_bindings_sha256": _canonical_hash(
+            sorted(mask_bindings, key=lambda row: (row["sample_id"], row["group_key"]))
+        ),
         "authorized_sample_count": 3,
     }
 
 
-def _authorized_mask(raw_row: dict, roots: tuple[Path, ...]) -> np.ndarray:
-    if (
-        raw_row.get("role") != "holdout"
-        or raw_row.get("split") != "train_screen_holdout"
-        or raw_row.get("source_split") != "train"
-    ):
-        raise ValueError("qualitative ground truth is not train-screen authorized")
-    root_index = int(raw_row["mask_root"])
-    if root_index not in range(len(roots)):
-        raise ValueError("qualitative mask root binding mismatch")
-    mask = read_mask(_safe_path(roots[root_index], raw_row["mask_relative"]))
-    blank = np.zeros((*mask.shape, 3), dtype=np.uint8)
-    _, resized = resize_image_and_mask(blank, mask, (384, 384))
-    if resized is None:
-        raise ValueError("qualitative ground truth resize failed")
-    return np.ascontiguousarray(resized, dtype=np.uint8)
-
-
-def main(argv: Sequence[str] | None = None) -> None:
-    args = _parser().parse_args(argv)
-    registry = json.loads(args.evidence_registry.read_text(encoding="ascii"))
-    validate_registry(registry)
-    index = json.loads(args.dataset_index.read_text(encoding="ascii"))
-    roots = tuple(path.expanduser().resolve() for path in args.dataset_root)
+def load_qualitative_selection(
+    dataset_index: str | Path, roots: Sequence[Path]
+) -> tuple[list[dict], list[np.ndarray]]:
+    _, holdout, index = load_dataset_index(dataset_index, dataset_roots=roots)
     rows = sorted(
         (
             row
@@ -140,8 +143,25 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     if len(rows) != 76:
         raise ValueError("qualitative selection requires the exact 76-row train screen")
-    # Fixed positions prevent prediction- or metric-based qualitative selection.
+    typed = {row.group_key: row for row in holdout}
+    if len(typed) != 76 or set(typed) != {str(row["group_key"]) for row in rows}:
+        raise ValueError("qualitative verified holdout binding mismatch")
     selected = [rows[0], rows[len(rows) // 2], rows[-1]]
+    masks: list[np.ndarray] = []
+    for row in selected:
+        verified = typed[str(row["group_key"])]
+        if verified.mask is None:
+            raise ValueError("qualitative verified ground truth is missing")
+        masks.append(np.ascontiguousarray(verified.mask, dtype=np.uint8).copy())
+    return selected, masks
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    args = _parser().parse_args(argv)
+    registry = json.loads(args.evidence_registry.read_text(encoding="ascii"))
+    validate_registry(registry)
+    roots = tuple(path.expanduser().resolve() for path in args.dataset_root)
+    selected, verified_masks = load_qualitative_selection(args.dataset_index, roots)
     display_authorization = load_display_authorization(
         args.provenance_manifest,
         selected,
@@ -168,8 +188,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     candidates: list[np.ndarray] = []
     ground_truths: list[np.ndarray] = []
     receipts: list[str] = []
-    for row in selected:
-        ground_truth = _authorized_mask(row, roots)
+    for row, ground_truth in zip(selected, verified_masks, strict=True):
         response = run_fixed_comparison(
             service,
             registry,

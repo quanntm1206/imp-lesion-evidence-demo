@@ -38,6 +38,7 @@ _INCLUDE_GRAPHICS = re.compile(
 )
 _TABLE_INPUT = re.compile(r"\\input\s*\{(tables/[^}]+)\}")
 _UNFINISHED = re.compile(r"\b(?:TODO|TBD|FIXME|XXX)\b|\?\?")
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 _CLAIM_TERMS = re.compile(
     r"state[ -]of[ -]the[ -]art|\bsota\b|statistical(?:ly)?[ -]superior(?:ity)?|"
     r"clinical[- ]grade|clinical validation|clinical system|clinical use|diagnostic(?: claim| system| use)?|"
@@ -140,18 +141,21 @@ def _claim_clauses(text: str) -> Iterable[str]:
         )
 
 
+_COORDINATION_TOKEN = re.compile(r"\\[A-Za-z]+|[A-Za-z0-9_][A-Za-z0-9_'-]*")
+_BARE_COMPLEMENT_ARTICLES = frozenset({"a", "an", "the"})
+
+
+def _is_bare_claim_continuation(value: str) -> bool:
+    tokens = _COORDINATION_TOKEN.findall(value)
+    return all(token.lower() in _BARE_COMPLEMENT_ARTICLES for token in tokens)
+
+
 def _claim_is_negated(clause: str, start: int, end: int) -> bool:
     prefix = clause[:start]
     boundaries: list[re.Match[str]] = []
-    explicit_subject = re.compile(
-        r"^(?:(?:i|we|you|he|she|they|it|this|that|these|those)\b|"
-        r"(?:my|our|your|his|her|their|its|the|a|an)\s+[A-Za-z][\w'-]*\b)",
-        re.IGNORECASE,
-    )
     for coordination in re.finditer(r"\b(?:and|or)\b", prefix, re.IGNORECASE):
-        right = prefix[coordination.end() :].lstrip()
-        left = prefix[: coordination.start()]
-        if right and (_CLAIM_TERMS.search(left) is None or explicit_subject.match(right)):
+        right = prefix[coordination.end() :]
+        if not _is_bare_claim_continuation(right):
             boundaries.append(coordination)
     scoped_prefix = prefix[boundaries[-1].start() :] if boundaries else prefix
     if _NEGATION.search(scoped_prefix):
@@ -514,11 +518,45 @@ _MODEL_IDENTIFIER = re.compile(
     r"\b[A-Z]{2,}(?:-[A-Za-z0-9]+)+\b|"
     r"\b[A-Z][A-Za-z0-9-]+\s+(?:model|system)\b"
 )
+_LOWERCASE_ARCHITECTURE_IDENTIFIER = re.compile(
+    r"\b(?:resnet\d*|nn[- ]?u[- ]?net|u[- ]?net|segformer(?:-?[a-z0-9]+)*|"
+    r"medsam|sam|vit|cnn)\b",
+    re.IGNORECASE,
+)
 
 
-def _claim_names_model(clause: str) -> bool:
+def _claim_names_model(clause: str, records: list[dict[str, Any]]) -> bool:
     without_metrics = _METRIC.sub(" ", clause)
-    return _MODEL_IDENTIFIER.search(without_metrics) is not None
+    if (
+        _MODEL_IDENTIFIER.search(without_metrics) is not None
+        or _LOWERCASE_ARCHITECTURE_IDENTIFIER.search(without_metrics) is not None
+    ):
+        return True
+    normalized = _normalized_phrase(clause)
+    markers = {
+        _normalized_phrase(record.get(field, ""))
+        for record in records
+        for field in ("evidence_class", "partition", "metric_contract")
+    }
+    positions = [normalized.find(marker) for marker in markers if marker and marker in normalized]
+    if not positions:
+        return False
+    prefix = normalized[: min(positions)].split()
+    while prefix and prefix[0] in {
+        "a",
+        "an",
+        "at",
+        "for",
+        "from",
+        "in",
+        "on",
+        "the",
+        "under",
+    }:
+        prefix.pop(0)
+    if prefix[:2] == ["metric", "contract"]:
+        prefix = prefix[2:]
+    return bool(prefix)
 
 
 def _identity_scoped_records(
@@ -543,7 +581,7 @@ def _identity_scoped_records(
                     before.append((0, index))
     distances = connected_after or before
     if not distances:
-        return [] if _claim_names_model(clause) else records
+        return [] if _claim_names_model(clause, records) else records
     nearest = min(distance for distance, _ in distances)
     selected = {index for distance, index in distances if distance == nearest}
     return [record for index, record in enumerate(records) if index in selected]
@@ -711,17 +749,83 @@ def _check_demo_receipts(
     if not isinstance(entries, list):
         errors.append("invalid demo receipt bundle")
         return
+    bundle_authorization = payload.get("display_authorization")
+    required_hash_binding = (
+        "sha256_raw+sha256_rgb+mask_sha256_raw+mask_sha256_binary"
+    )
+    if (
+        not isinstance(bundle_authorization, dict)
+        or bundle_authorization.get("hash_binding") != required_hash_binding
+        or not _SHA256.fullmatch(
+            str(bundle_authorization.get("mask_bindings_sha256", ""))
+        )
+    ):
+        errors.append("unbound demo mask authorization")
+    authorized_count = (
+        bundle_authorization.get("authorized_sample_count")
+        if isinstance(bundle_authorization, dict)
+        else None
+    )
+    if authorized_count != 3 or len(entries) != authorized_count:
+        errors.append("demo authorization count mismatch")
+    mask_bindings: list[dict[str, str]] = []
     for entry in entries:
         if not isinstance(entry, dict):
             errors.append("invalid demo receipt bundle")
             continue
-        if "metrics" not in entry:
-            continue
+        metrics = entry.get("metrics")
+        if not isinstance(metrics, dict) or any(
+            not isinstance(metrics.get(arm), dict) for arm in ("control", "candidate")
+        ):
+            errors.append("missing demo metrics")
         authorization = entry.get("display_authorization")
-        if not isinstance(authorization, dict) or authorization.get(
-            "mask_variant"
-        ) != "challenge_ground_truth":
+        if (
+            not isinstance(authorization, dict)
+            or authorization.get("mask_variant") != "challenge_ground_truth"
+            or authorization != bundle_authorization
+        ):
             errors.append("hidden no-GT metrics")
+        binding = entry.get("ground_truth_binding")
+        required_mask_fields = (
+            "mask_sha256_raw",
+            "mask_sha256_binary",
+            "mask_sha256_runtime",
+        )
+        if not isinstance(binding, dict) or any(
+            not _SHA256.fullmatch(str(binding.get(field, "")))
+            for field in required_mask_fields
+        ):
+            errors.append("unbound demo ground truth")
+            continue
+        sample = entry.get("sample")
+        if not isinstance(sample, dict):
+            errors.append("unbound demo ground truth")
+            continue
+        mask_bindings.append(
+            {
+                "group_key": str(sample.get("group_key", "")),
+                "sample_id": str(sample.get("sample_id", "")),
+                "mask_sha256_raw": str(binding["mask_sha256_raw"]),
+                "mask_sha256_binary": str(binding["mask_sha256_binary"]),
+            }
+        )
+    if len(mask_bindings) != len(entries):
+        errors.append("unbound demo mask authorization")
+    elif isinstance(bundle_authorization, dict):
+        encoded = json.dumps(
+            sorted(
+                mask_bindings,
+                key=lambda row: (row["sample_id"], row["group_key"]),
+            ),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("ascii")
+        if bundle_authorization.get("mask_bindings_sha256") != hashlib.sha256(
+            encoded
+        ).hexdigest():
+            errors.append("unbound demo mask authorization")
 
 
 def _normalized_tex_path(value: str, suffix: str) -> str:

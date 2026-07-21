@@ -12,6 +12,7 @@ from typing import NamedTuple, Sequence
 import matplotlib.pyplot as plt
 import numpy as np
 
+from lesion_robustness.demo.immutable_io import ImmutableSnapshot
 from lesion_robustness.evidence_registry import validate_registry
 
 
@@ -186,7 +187,7 @@ def _build_delta(evidence: Loop206DeltaEvidence, output: Path) -> None:
     axis.set_yticks(positions, metrics)
     axis.set_ylim(-0.55, 1.55)
     axis.set_xlim(-0.057, 0.022)
-    axis.set_xlabel("Candidate minus control (95% paired cluster-bootstrap CI)")
+    axis.set_xlabel("Candidate minus control (95% split-group bootstrap CI; seeds fixed)")
     axis.set_title("Loop206 train-screen paired deltas", loc="left", fontweight="bold")
     axis.grid(axis="x", color="#d8d4ca", linewidth=0.6)
     axis.spines[["top", "right", "left"]].set_visible(False)
@@ -211,9 +212,9 @@ def _disagreement_overlay(
 
 
 def _load_bundle(
-    path: Path, *, expected_registry_sha256: str
+    snapshot: ImmutableSnapshot, *, expected_registry_sha256: str
 ) -> tuple[dict[str, np.ndarray], list[dict], dict]:
-    with np.load(path, allow_pickle=False) as bundle:
+    with np.load(snapshot.open(), allow_pickle=False) as bundle:
         arrays = {
             key: np.asarray(bundle[key])
             for key in ("original", "control", "candidate", "ground_truth")
@@ -223,7 +224,8 @@ def _load_bundle(
     if any(value.shape[0] != 3 for value in arrays.values()) or len(receipts) != 3:
         raise ValueError("qualitative bundle must contain exactly three examples")
     sample_ids: set[str] = set()
-    for receipt in receipts:
+    mask_bindings: list[dict[str, str]] = []
+    for index, receipt in enumerate(receipts):
         if (
             receipt.get("schema_version") != "loop206.demo.receipt.v1"
             or receipt.get("mode") != "exact_fixed_cache"
@@ -235,7 +237,38 @@ def _load_bundle(
             or receipt.get("evidence_registry_sha256") != expected_registry_sha256
         ):
             raise ValueError("qualitative receipt violates the evidence contract")
-        sample_ids.add(str(receipt["sample"]["sample_id"]))
+        sample_id = str(receipt["sample"]["sample_id"])
+        group_key = str(receipt["sample"]["group_key"])
+        sample_ids.add(sample_id)
+        ground_truth_binding = receipt.get("ground_truth_binding")
+        if not isinstance(ground_truth_binding, dict):
+            raise ValueError("qualitative ground truth receipt binding is missing")
+        mask_sha256_raw = str(ground_truth_binding.get("mask_sha256_raw", ""))
+        mask_sha256_binary = str(
+            ground_truth_binding.get("mask_sha256_binary", "")
+        )
+        mask_sha256_runtime = str(
+            ground_truth_binding.get("mask_sha256_runtime", "")
+        )
+        if any(
+            len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in (mask_sha256_raw, mask_sha256_binary, mask_sha256_runtime)
+        ):
+            raise ValueError("qualitative ground truth receipt hash is invalid")
+        if (
+            ImmutableSnapshot.decoded_binary_mask_sha256(arrays["ground_truth"][index])
+            != mask_sha256_runtime
+        ):
+            raise ValueError("qualitative ground truth receipt hash mismatch")
+        mask_bindings.append(
+            {
+                "group_key": group_key,
+                "sample_id": sample_id,
+                "mask_sha256_raw": mask_sha256_raw,
+                "mask_sha256_binary": mask_sha256_binary,
+            }
+        )
     if len(sample_ids) != 3:
         raise ValueError("qualitative examples must be unique")
     if (
@@ -246,8 +279,21 @@ def _load_bundle(
         or display_authorization.get("provenance_manifest_sha256")
         != PROVENANCE_MANIFEST_SHA256
         or display_authorization.get("authorized_sample_count") != 3
+        or display_authorization.get("hash_binding")
+        != "sha256_raw+sha256_rgb+mask_sha256_raw+mask_sha256_binary"
     ):
         raise ValueError("qualitative display authorization is invalid")
+    encoded_bindings = json.dumps(
+        sorted(mask_bindings, key=lambda row: (row["sample_id"], row["group_key"])),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode("ascii")
+    if display_authorization.get("mask_bindings_sha256") != hashlib.sha256(
+        encoded_bindings
+    ).hexdigest():
+        raise ValueError("qualitative display mask binding mismatch")
     return arrays, receipts, display_authorization
 
 
@@ -349,11 +395,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     _style()
     evidence = load_loop206_delta_evidence(args.evidence_registry)
-    bundle_sha256 = hashlib.sha256(args.receipt_bundle.read_bytes()).hexdigest()
+    bundle_snapshot = ImmutableSnapshot.read(args.receipt_bundle)
+    bundle_sha256 = bundle_snapshot.sha256
     if bundle_sha256 != args.expected_receipt_bundle_sha256:
         raise ValueError("qualitative receipt bundle SHA-256 mismatch")
     arrays, receipts, display_authorization = _load_bundle(
-        args.receipt_bundle,
+        bundle_snapshot,
         expected_registry_sha256=evidence.registry_sha256,
     )
     _build_delta(evidence, args.output_dir / "loop206_delta.pdf")

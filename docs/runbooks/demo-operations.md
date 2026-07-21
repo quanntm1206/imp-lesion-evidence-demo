@@ -13,23 +13,26 @@ tunnel commands.
 
 - `IMP_LOOP206_CONTROL_CHECKPOINT`
 - `IMP_LOOP206_CANDIDATE_CHECKPOINT`
-- `IMP_LOOP206_PRIOR`
-- `IMP_LOOP206_PRIOR_RECEIPT`
 - `IMP_LOOP206_DATA_ROOT`
+
+The current release registry has no approved `prior_receipt_sha256`. Do not set `IMP_LOOP206_PRIOR` or `IMP_LOOP206_PRIOR_RECEIPT`; configured values are rejected before receipt parsing or deserialization. The guarded public launcher also clears both names.
 
 ## Preflight
 
 1. Verify the evidence registry semantic hash. Require it to match
    `artifact_manifest.json`, fixed-cache receipts, and the paper-audit receipt.
-2. Verify control checkpoint, candidate checkpoint, prior, prior receipt,
-   candidate-cache manifest, and zero-cache manifest SHA-256 values against the
-   approved model registry and fixed-cache receipt.
-3. Start only when the candidate prior reproduces the 76 approved holdout
-   contours exactly. Otherwise keep arbitrary-upload candidate inference
-   disabled; do not substitute an approximate prior.
+2. Verify control checkpoint, candidate checkpoint, candidate-cache manifest,
+   and zero-cache manifest SHA-256 values against the approved model registry
+   and fixed-cache receipt.
+3. Confirm the release registry leaves `prior_receipt_sha256` unset and the
+   arbitrary-upload candidate remains disabled. A future release may enable it
+   only by pinning an approved passed-receipt digest after exact 76/76 parity;
+   do not substitute an adjacent self-hash or approximate prior.
 4. Run the paper audit. It must report `passed=true errors=0` before release.
 
 ## Local Start And Health
+
+Browser rendering and desktop/mobile screenshots remain unverified. This section defines the required operator verification; it does not record that verification as complete.
 
 1. Start `scripts/demo/run_demo.ps1` on the loopback interface only. Direct
    `lesion-demo` launch is rejected because it lacks the launcher-owned upload

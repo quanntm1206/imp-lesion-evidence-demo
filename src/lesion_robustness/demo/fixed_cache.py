@@ -17,7 +17,7 @@ from lesion_robustness.demo.immutable_io import ImmutableSnapshot
 
 CACHE_SCHEMA = "loop206.leakage_safe_pilot_cache.v2"
 ARTIFACT_TYPE = "loop206_packed_binary_channel"
-DATASET_INDEX_SHA256 = "bed4809522f420f1ce2c7805128c5bb5db5e2b8c1dfb4846a8e02450e6b699a0"
+DATASET_INDEX_SHA256 = "e88a3cc144b799d214f40b85064665d3348bc8bac3ead549f80b96d436f69fc3"
 LIVE_CONFIG_SHA256 = "e3110561451dc735f996a564ad12202811266b805696a919a20784602f8f4903"
 LIVE_CONFIG_SCHEMA = "loop206.demo.live.v1"
 _PRODUCTION_PROVIDER_TOKEN = object()
@@ -88,6 +88,9 @@ class _AuthorizedFixedSample:
     candidate_data_sha256: str
     zero_manifest_sha256: str
     zero_data_sha256: str
+    mask_sha256_raw: str
+    mask_sha256_binary: str
+    mask_sha256_runtime: str
     historical_cache_provenance_drift: bool
     _token: object
 
@@ -399,8 +402,7 @@ class ProductionFixedSampleProvider:
     def authorize(self, identifier: str, *, corruption: str) -> _AuthorizedFixedSample:
         from lesion_robustness.corruptions import apply_corruption
         from lesion_robustness.demo.loop206_prior import deterministic_corruption_kwargs
-        from lesion_robustness.data_manifest import sha256_rgb
-        from lesion_robustness.image_utils import read_rgb, resize_image_and_mask
+        from lesion_robustness.image_utils import resize_image_and_mask
         from lesion_robustness.preprocessing import preprocess_image_from_config
 
         key = str(identifier)
@@ -413,9 +415,13 @@ class ProductionFixedSampleProvider:
         if root_index not in range(len(self._roots)):
             raise ValueError("Loop206 fixed dataset root binding mismatch")
         image_path = _safe_index_path(self._roots[root_index], raw["image_relative"])
-        if _sha256_file(image_path) != raw["sha256_raw"] or sha256_rgb(image_path) != raw["sha256_rgb"]:
+        image_snapshot = ImmutableSnapshot.read(image_path)
+        original = image_snapshot.decode_rgb()
+        if (
+            image_snapshot.sha256 != raw["sha256_raw"]
+            or image_snapshot.decoded_rgb_sha256(original) != raw["sha256_rgb"]
+        ):
             raise ValueError("Loop206 fixed original image hash mismatch")
-        original = read_rgb(image_path)
         resized, _ = resize_image_and_mask(original, None, (384, 384))
         if not np.array_equal(resized, typed.image):
             raise ValueError("Loop206 fixed decoded image binding mismatch")
@@ -440,6 +446,15 @@ class ProductionFixedSampleProvider:
             corruption=view,
             input_rgb=model_rgb,
         )
+        if typed.mask is None:
+            raise ValueError("Loop206 fixed ground truth binding is missing")
+        mask_sha256_raw = str(raw.get("mask_sha256_raw", ""))
+        mask_sha256_binary = str(raw.get("mask_sha256_binary", ""))
+        if not _is_sha256(mask_sha256_raw) or not _is_sha256(mask_sha256_binary):
+            raise ValueError("Loop206 fixed ground truth hash binding mismatch")
+        mask_sha256_runtime = ImmutableSnapshot.decoded_binary_mask_sha256(
+            np.asarray(typed.mask, dtype=np.uint8)
+        )
         return _AuthorizedFixedSample(
             group_key=typed.group_key,
             sample_id=typed.sample_id,
@@ -452,6 +467,9 @@ class ProductionFixedSampleProvider:
             candidate_data_sha256=self._pair.candidate.data_sha256,
             zero_manifest_sha256=self._pair.zero.manifest_sha256,
             zero_data_sha256=self._pair.zero.data_sha256,
+            mask_sha256_raw=mask_sha256_raw,
+            mask_sha256_binary=mask_sha256_binary,
+            mask_sha256_runtime=mask_sha256_runtime,
             historical_cache_provenance_drift=self._historical_cache_provenance_drift,
             _token=_AUTHORIZED_SAMPLE_TOKEN,
         )

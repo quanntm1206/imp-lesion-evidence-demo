@@ -11,5 +11,6 @@
     "checkpoint_sha256": "afb86b2a5161189369dbc3c985e78f214c305470661048c6643726612f57638b"
   },
   "prior_env": "IMP_LOOP206_PRIOR",
-  "prior_receipt_env": "IMP_LOOP206_PRIOR_RECEIPT"
+  "prior_receipt_env": "IMP_LOOP206_PRIOR_RECEIPT",
+  "prior_receipt_sha256": null
 }

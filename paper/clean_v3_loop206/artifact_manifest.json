@@ -4,9 +4,9 @@
   "schema_version": "imp.paper_artifacts.v1",
   "paper_pdf": {
     "path": "main.pdf",
-    "sha256": "43b955e05b709db5891d2872728ff100e1f3b9e5974e9a16674a0b6871ca8312",
-    "pages": 12,
-    "bytes": 1466659
+    "sha256": "f4379e80e4d9c45884475475bdb549ebf661aff5c7c53acafcc708724eb4d36d",
+    "pages": 13,
+    "bytes": 1467800
   },
   "figures": {
     "evidence_pipeline": {
@@ -33,14 +33,14 @@
     },
     "loop206_delta": {
       "path": "figures/loop206_delta.pdf",
-      "sha256": "d0837835ac29f3aa9614e9da8c03082c06e3dc3c457cddabe23a27334a58140b",
-      "caption": "Loop206 candidate-minus-control Dice and boundary-F1 deltas with 95% paired cluster-bootstrap confidence intervals and a zero reference line.",
+      "sha256": "4252809c43242f38c910eb39b20bb1442813b6da80a64b53dfb827bed63d543e",
+      "caption": "Loop206 candidate-minus-control Dice and boundary-F1 deltas with 95% split-group bootstrap confidence intervals conditional on selected seeds and a zero reference line.",
       "label": "fig:loop206-delta",
-      "supported_claim": "On the three-seed, 76-group train-screen protocol, robust Dice decreased and boundary F1 did not show the intended improvement.",
+      "supported_claim": "After averaging the selected seeds and views on the 76-group train-screen protocol, the robust-Dice delta was negative and boundary F1 did not show the intended improvement; seed-level directions were mixed.",
       "evidence_class": "train_screen",
-      "generation_command": "python figures/generate_task10_figures.py --evidence-registry <EVIDENCE_REGISTRY> --receipt-bundle <AUTHORIZED_RECEIPT_BUNDLE> --expected-receipt-bundle-sha256 536d5e42d1cbab4c951b23573b543248927ac14c9d07c1adac0f444133c820b0 --output-dir figures",
+      "generation_command": "python figures/generate_task10_figures.py --evidence-registry <EVIDENCE_REGISTRY> --receipt-bundle <AUTHORIZED_RECEIPT_BUNDLE> --expected-receipt-bundle-sha256 c5ff2157221f117349b7bb72610bd3da8afa99699ca708bf426f6bfa056d108e --output-dir figures",
       "generation_source_path": "figures/generate_task10_figures.py",
-      "generation_source_sha256": "30b8cfaca40c299e5e57206989ae6a7bff48cedcbab9dde458475bdf8762176e",
+      "generation_source_sha256": "76556b770760a50c62d680ab0d7b2100764c8474f64aba8e2967a183f31dd2cc",
       "evidence_registry_sha256": "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32",
       "validation": {
         "values_against_registry": "passed",
@@ -55,19 +55,19 @@
       "label": "fig:qualitative-demo",
       "supported_claim": "The real GPU service can render illustrative two-arm fixed-cache comparisons for allowlisted train-screen samples; arbitrary-upload candidate inference remains unauthorized.",
       "evidence_class": "train_screen / exact_fixed_cache / historical_cache_provenance_drift",
-      "generation_command": "python figures/generate_task10_figures.py --evidence-registry <EVIDENCE_REGISTRY> --receipt-bundle <AUTHORIZED_RECEIPT_BUNDLE> --expected-receipt-bundle-sha256 536d5e42d1cbab4c951b23573b543248927ac14c9d07c1adac0f444133c820b0 --output-dir figures",
+      "generation_command": "python figures/generate_task10_figures.py --evidence-registry <EVIDENCE_REGISTRY> --receipt-bundle <AUTHORIZED_RECEIPT_BUNDLE> --expected-receipt-bundle-sha256 c5ff2157221f117349b7bb72610bd3da8afa99699ca708bf426f6bfa056d108e --output-dir figures",
       "generation_chain": [
         "python figures/capture_qualitative_demo.py --model-registry <MODEL_REGISTRY> --evidence-registry <EVIDENCE_REGISTRY> --dataset-index <DATASET_INDEX> --dataset-root <DATASET_ROOT> --provenance-manifest <PROVENANCE_MANIFEST> --candidate-manifest <CANDIDATE_MANIFEST> --zero-manifest <ZERO_MANIFEST> --live-config <LIVE_CONFIG> --control-checkpoint <CONTROL_CHECKPOINT> --candidate-checkpoint <CANDIDATE_CHECKPOINT> --output <AUTHORIZED_RECEIPT_BUNDLE> --device cuda",
-        "python figures/generate_task10_figures.py --evidence-registry <EVIDENCE_REGISTRY> --receipt-bundle <AUTHORIZED_RECEIPT_BUNDLE> --expected-receipt-bundle-sha256 536d5e42d1cbab4c951b23573b543248927ac14c9d07c1adac0f444133c820b0 --output-dir figures"
+        "python figures/generate_task10_figures.py --evidence-registry <EVIDENCE_REGISTRY> --receipt-bundle <AUTHORIZED_RECEIPT_BUNDLE> --expected-receipt-bundle-sha256 c5ff2157221f117349b7bb72610bd3da8afa99699ca708bf426f6bfa056d108e --output-dir figures"
       ],
       "generation_source_path": "figures/generate_task10_figures.py",
-      "generation_source_sha256": "30b8cfaca40c299e5e57206989ae6a7bff48cedcbab9dde458475bdf8762176e",
+      "generation_source_sha256": "76556b770760a50c62d680ab0d7b2100764c8474f64aba8e2967a183f31dd2cc",
       "capture_source_path": "figures/capture_qualitative_demo.py",
-      "capture_source_sha256": "a59c9e5f80d109db6e75be21b0db58b4e31b13646889e6c08924b2347f89b147",
+      "capture_source_sha256": "6dbbc7b6101b6cc1f3780b704c4e33389b1a9a6bc576e3554e1670c255f10e77",
       "receipt_path": "figures/qualitative_demo_receipts.json",
-      "receipt_sha256": "f49ca6350b24131cd8d1f8f7317df8a55c48d73da4e2ed7c4feef7b0b8fe9f0c",
-      "provenance_receipt_sha256": "f49ca6350b24131cd8d1f8f7317df8a55c48d73da4e2ed7c4feef7b0b8fe9f0c",
-      "external_runtime_bundle_sha256": "536d5e42d1cbab4c951b23573b543248927ac14c9d07c1adac0f444133c820b0",
+      "receipt_sha256": "9d5623a6ec8759212bea5ea8190b124ce030073c59e5c37697f8cc596fc93991",
+      "provenance_receipt_sha256": "9d5623a6ec8759212bea5ea8190b124ce030073c59e5c37697f8cc596fc93991",
+      "external_runtime_bundle_sha256": "c5ff2157221f117349b7bb72610bd3da8afa99699ca708bf426f6bfa056d108e",
       "provenance_manifest_sha256": "4e86d251231bc105167910c6b5a41fc29900dff41342405657a5c2eccb67b102",
       "evidence_registry_sha256": "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32",
       "display_authorization": {
@@ -75,7 +75,8 @@
         "image_license": "CC-0",
         "mask_variant": "challenge_ground_truth",
         "identity_field": "isic_image_id",
-        "hash_binding": "sha256_raw+sha256_rgb",
+        "hash_binding": "sha256_raw+sha256_rgb+mask_sha256_raw+mask_sha256_binary",
+        "mask_bindings_sha256": "c2a3ad6b4348b4eef45d66db6938e2bfdf64111f2087d3422c1ffa8c0bfc71d4",
         "authorized_sample_count": 3
       },
       "selection_rule": "first, middle, last after sorting all 76 train-screen rows by sample_id and group_key",
@@ -90,11 +91,11 @@
   "tables": {
     "clean_v3_validation": {
       "path": "tables/clean_v3_validation.tex",
-      "sha256": "f14142d369fe8c7ad4ba141b7fdcf75a4b90e921f4851faa925bb30c9d1dd88f"
+      "sha256": "3f961f763c5bd7f5c7ee93e5110e49aab3f97f7f9bd7aedf177cd88a74d6eb90"
     },
     "evidence_scope": {
       "path": "tables/evidence_scope.tex",
-      "sha256": "427dd5ab2e6f48888c207fc61f7881b21f2f36e447b0416eac02259a16c18e17"
+      "sha256": "808a6463017610f0417d4f79ed5035673c85bce5f996ba8dd2d37b38d11cf41f"
     },
     "legacy_loop170": {
       "path": "tables/legacy_loop170.tex",
@@ -102,7 +103,7 @@
     },
     "loop206_ablation": {
       "path": "tables/loop206_ablation.tex",
-      "sha256": "7fa3cbe3b40812b21de7d9ad545aa6a9da42fc2e3f0901cc83b1b68ba36f630e"
+      "sha256": "83ecad55a600b6ec3f288c7e36437ad426948632aca4a6e0abc09a48c7d3b831"
     }
   }
 }

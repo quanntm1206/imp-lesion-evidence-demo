@@ -102,3 +102,56 @@ class ImmutableSnapshot:
 
     def text(self, encoding: str) -> str:
         return self.read_bytes().decode(encoding)
+
+    def decode_rgb(self):
+        import numpy as np
+        from PIL import Image
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=Image.DecompressionBombWarning)
+            with Image.open(self.open()) as image:
+                if int(image.width) * int(image.height) > 64_000_000:
+                    raise ValueError("verified source image exceeds trusted pixel cap")
+                return np.array(image.convert("RGB"), dtype=np.uint8, copy=True)
+
+    @staticmethod
+    def decoded_rgb_sha256(image) -> str:
+        import numpy as np
+
+        rgb = np.asarray(image)
+        if rgb.ndim != 3 or rgb.shape[2] != 3 or rgb.dtype != np.uint8:
+            raise ValueError("decoded RGB hash requires an RGB uint8 array")
+        contiguous = np.ascontiguousarray(rgb)
+        payload = (
+            f"{contiguous.shape[0]}x{contiguous.shape[1]}x3|".encode("ascii")
+            + contiguous.tobytes()
+        )
+        return hashlib.sha256(payload).hexdigest()
+
+    def decode_binary_mask(self):
+        import numpy as np
+        from PIL import Image
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=Image.DecompressionBombWarning)
+            with Image.open(self.open()) as image:
+                if int(image.width) * int(image.height) > 64_000_000:
+                    raise ValueError("verified source mask exceeds trusted pixel cap")
+                gray = np.array(image.convert("L"), dtype=np.uint8, copy=True)
+        return (gray > 127).astype(np.uint8)
+
+    @staticmethod
+    def decoded_binary_mask_sha256(mask) -> str:
+        import numpy as np
+
+        binary = np.asarray(mask)
+        if binary.ndim != 2 or binary.dtype != np.uint8 or not np.isin(binary, (0, 1)).all():
+            raise ValueError("decoded mask hash requires a binary uint8 array")
+        contiguous = np.ascontiguousarray(binary)
+        payload = (
+            f"{contiguous.shape[0]}x{contiguous.shape[1]}|".encode("ascii")
+            + contiguous.tobytes()
+        )
+        return hashlib.sha256(payload).hexdigest()
