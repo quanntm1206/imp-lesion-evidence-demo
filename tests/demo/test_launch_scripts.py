@@ -179,6 +179,84 @@ def test_tunnel_checks_health_resolves_application_and_preserves_exit_code() -> 
     assert "[string]$LocalUrl" not in script
 
 
+def test_recovery_script_is_read_only_and_forbids_distro_mutation() -> None:
+    script = _read("scripts/demo/recover_nnunet_artifacts.ps1")
+
+    for token in (
+        "-ReadOnly",
+        "--bare",
+        "ro,noload",
+        "verify_nnunet_bundle.py",
+        "Dismount-VHD",
+        "finally",
+        "source_vhd_proof",
+    ):
+        assert token in script
+    for forbidden in (
+        "--unregister",
+        "--import-in-place",
+        "Resize-VHD",
+        "Optimize-VHD",
+        "Remove-Item",
+    ):
+        assert forbidden not in script
+
+
+def test_recovery_script_requires_admin_before_input_access(tmp_path: Path) -> None:
+    admin_check = subprocess.run(
+        [
+            _powershell(),
+            "-NoProfile",
+            "-Command",
+            "if (([Security.Principal.WindowsPrincipal] "
+            "[Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole("
+            "[Security.Principal.WindowsBuiltInRole]::Administrator)) { exit 0 } "
+            "else { exit 1 }",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if admin_check.returncode == 0:
+        pytest.skip("non-administrator token required for this safety test")
+
+    output_root = tmp_path / "must-not-be-created"
+    result = _run_script(
+        ROOT / "scripts/demo/recover_nnunet_artifacts.ps1",
+        "-VhdPath",
+        str(tmp_path / "missing.vhdx"),
+        "-ReportPath",
+        str(tmp_path / "missing-report.json"),
+        "-OutputRoot",
+        str(output_root),
+    )
+
+    assert result.returncode != 0
+    assert "Administrator token required" in result.stdout + result.stderr
+    assert not output_root.exists()
+
+
+def test_recovery_script_uses_only_the_exact_vhd_environment_metadata() -> None:
+    script = _read("scripts/demo/recover_nnunet_artifacts.ps1")
+
+    assert "$linuxMount/.venv/lib/python3.12/site-packages" in script
+    assert "find \"$1\"" not in script
+    assert "'sh', '-c'" not in script
+    assert "'sh', '-s', '--'" in script
+    for package in (
+        "nnunetv2",
+        "torch",
+        "dynamic-network-architectures",
+        "batchgenerators",
+        "batchgeneratorsv2",
+        "numpy",
+        "scipy",
+        "simpleitk",
+        "acvl-utils",
+    ):
+        assert package in script
+
+
 def test_demo_runbook_documents_locked_and_fixed_cache_modes() -> None:
     readme = _read("demo/README.md")
 
@@ -208,7 +286,11 @@ def test_demo_runbook_documents_locked_and_fixed_cache_modes() -> None:
 
 def test_powershell_scripts_parse() -> None:
     shell = _powershell()
-    for relative in ("scripts/demo/run_demo.ps1", "scripts/demo/run_tunnel.ps1"):
+    for relative in (
+        "scripts/demo/run_demo.ps1",
+        "scripts/demo/run_tunnel.ps1",
+        "scripts/demo/recover_nnunet_artifacts.ps1",
+    ):
         environment = dict(os.environ)
         environment["IMP_PARSE_FILE"] = str(ROOT / relative)
         result = subprocess.run(
