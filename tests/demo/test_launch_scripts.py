@@ -287,6 +287,9 @@ def test_recovery_container_contract_is_exact_and_readonly() -> None:
         "--rm",
         "readonly",
         "Headers Error",
+        "__IMP_7Z_BODY_BEGIN",
+        "__IMP_7Z_BODY_END",
+        "__IMP_7Z_EXIT=",
         "267947879",
         "home/admin_mugen/imp_cache/external_repos/loop170/nnUNet/pyproject.toml",
         "home/admin_mugen/imp_cache/external_repos/loop170/nnUNet/nnunetv2.egg-info/PKG-INFO",
@@ -322,24 +325,70 @@ def test_recovery_container_arguments_lock_mounts_and_image() -> None:
     ]
 
 
-def test_recovery_parser_accepts_only_observed_header_warning() -> None:
-    valid = _run_recovery_function_harness(
+def _run_container_parser_lines(lines: list[str]) -> subprocess.CompletedProcess[str]:
+    values = ",".join("'" + line.replace("'", "''") + "'" for line in lines)
+    return _run_recovery_function_harness(
         ("Assert-ContainerParserResult",),
         "$value=Assert-ContainerParserResult -ProcessResult ([pscustomobject]@{"
-        "ExitCode=0;Lines=@('recovery_7zip=7zip-24.09-r0','ERRORS:',"
-        "'Headers Error','Archives with Errors: 1','recovery_7zip_exit=2')}); $value",
-    )
-    wrong = _run_recovery_function_harness(
-        ("Assert-ContainerParserResult",),
-        "Assert-ContainerParserResult -ProcessResult ([pscustomobject]@{"
-        "ExitCode=0;Lines=@('recovery_7zip=7zip-24.09-r0','CRC Error',"
-        "'recovery_7zip_exit=2')})",
+        f"ExitCode=0;Lines=@({values})}}); $value",
     )
 
-    assert valid.returncode == 0, valid.stderr
-    assert valid.stdout.strip() == "Headers Error"
-    assert wrong.returncode != 0
-    assert "unexpected parser diagnostic" in wrong.stderr
+
+def test_recovery_parser_accepts_exact_locked_diagnostics() -> None:
+    result = _run_container_parser_lines(
+        [
+            "recovery_7zip=7zip-24.09-r0",
+            "apk output outside parser body",
+            "__IMP_7Z_BODY_BEGIN",
+            "ERRORS:",
+            "Headers Error",
+            "Archives with Errors: 1",
+            "__IMP_7Z_BODY_END",
+            "__IMP_7Z_EXIT=2",
+        ]
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "Headers Error"
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        ("missing_marker", "exactly one __IMP_7Z_EXIT=2"),
+        ("duplicate_marker", "exactly one __IMP_7Z_EXIT=2"),
+        ("wrong_code", "exactly one __IMP_7Z_EXIT=2"),
+        ("missing_summary", "diagnostic multiset"),
+        ("extra_summary", "diagnostic multiset"),
+    ],
+)
+def test_recovery_parser_rejects_diagnostic_drift(
+    mutation: str, expected: str
+) -> None:
+    lines = [
+        "recovery_7zip=7zip-24.09-r0",
+        "__IMP_7Z_BODY_BEGIN",
+        "ERRORS:",
+        "Headers Error",
+        "Archives with Errors: 1",
+        "__IMP_7Z_BODY_END",
+        "__IMP_7Z_EXIT=2",
+    ]
+    if mutation == "missing_marker":
+        lines.pop()
+    elif mutation == "duplicate_marker":
+        lines.append("__IMP_7Z_EXIT=2")
+    elif mutation == "wrong_code":
+        lines[-1] = "__IMP_7Z_EXIT=1"
+    elif mutation == "missing_summary":
+        lines.remove("Archives with Errors: 1")
+    else:
+        lines.insert(lines.index("__IMP_7Z_BODY_END"), "Warnings: 1")
+
+    result = _run_container_parser_lines(lines)
+
+    assert result.returncode != 0
+    assert expected in result.stderr
 
 
 def test_recovery_container_context_uses_mocked_exact_docker() -> None:

@@ -444,19 +444,29 @@ function Assert-ContainerParserResult {
     if (@($lines | Where-Object { $_ -ceq 'recovery_7zip=7zip-24.09-r0' }).Count -ne 1) {
         throw 'Docker parser did not prove 7zip=24.09-r0'
     }
-    $exitLines = @($lines | Where-Object { $_ -like 'recovery_7zip_exit=*' })
-    if ($exitLines.Count -ne 1 -or $exitLines[0] -notmatch '^recovery_7zip_exit=[012]$') {
-        throw 'Docker parser returned an invalid 7zip exit marker'
+    $exitLines = @($lines | Where-Object { $_ -like '__IMP_7Z_EXIT=*' })
+    if ($exitLines.Count -ne 1 -or $exitLines[0] -cne '__IMP_7Z_EXIT=2') {
+        throw 'Docker parser requires exactly one __IMP_7Z_EXIT=2 marker'
     }
-    $allowedDiagnostics = @('ERRORS:', 'Headers Error', 'Archives with Errors: 1', 'Open Errors: 1')
-    $diagnostics = @($lines | Where-Object { $_ -match '(?i)(warning|error)' })
-    foreach ($diagnostic in $diagnostics) {
-        if ($allowedDiagnostics -notcontains $diagnostic) {
-            throw "unexpected parser diagnostic: $diagnostic"
-        }
+    $beginLines = @($lines | Where-Object { $_ -ceq '__IMP_7Z_BODY_BEGIN' })
+    $endLines = @($lines | Where-Object { $_ -ceq '__IMP_7Z_BODY_END' })
+    if ($beginLines.Count -ne 1 -or $endLines.Count -ne 1) {
+        throw 'Docker parser requires exactly one 7zip body delimiter pair'
     }
-    if (@($lines | Where-Object { $_ -ceq 'Headers Error' }).Count -ne 1) {
-        throw 'Docker parser did not report the observed Headers Error warning'
+    $beginIndex = [Array]::IndexOf($lines, '__IMP_7Z_BODY_BEGIN')
+    $endIndex = [Array]::IndexOf($lines, '__IMP_7Z_BODY_END')
+    $exitIndex = [Array]::IndexOf($lines, '__IMP_7Z_EXIT=2')
+    if ($beginIndex -ge $endIndex -or $endIndex -ge $exitIndex) {
+        throw 'Docker parser marker order is invalid'
+    }
+    $body = @()
+    if ($endIndex -gt ($beginIndex + 1)) {
+        $body = @($lines[($beginIndex + 1)..($endIndex - 1)])
+    }
+    $diagnostics = @($body | Where-Object { $_ -match '(?i)(warning|error)' } | Sort-Object)
+    $expectedDiagnostics = @('Archives with Errors: 1', 'ERRORS:', 'Headers Error') | Sort-Object
+    if (($diagnostics -join "`n") -cne ($expectedDiagnostics -join "`n")) {
+        throw "Docker parser diagnostic multiset mismatch: $($diagnostics -join ', ')"
     }
     return 'Headers Error'
 }
@@ -554,11 +564,14 @@ apk info -e '7zip=24.09-r0' || exit 72
 apk info -v 7zip | grep -Fx '7zip-24.09-r0' >/dev/null || exit 73
 printf 'recovery_7zip=7zip-24.09-r0\n'
 set +e
-7zz e -y -o/output /input/source.vhdx "$@" >/tmp/7zip.log 2>&1
+7zz e -y -o/output /input/source.vhdx "$@" >/tmp/7zip.stdout 2>/tmp/7zip.stderr
 status=$?
 set -e
-cat /tmp/7zip.log
-printf 'recovery_7zip_exit=%s\n' "$status"
+printf '__IMP_7Z_BODY_BEGIN\n'
+cat /tmp/7zip.stdout
+cat /tmp/7zip.stderr
+printf '__IMP_7Z_BODY_END\n'
+printf '__IMP_7Z_EXIT=%s\n' "$status"
 exit 0
 '@
     $result = Invoke-DockerParserProcess -DockerPath $Context.DockerPath -Arguments $arguments -Script $parserScript
