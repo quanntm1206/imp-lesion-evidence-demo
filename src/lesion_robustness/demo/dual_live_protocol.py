@@ -212,6 +212,34 @@ def expected_bindings(request_id: str, image: np.ndarray) -> dict[str, object]:
     }
 
 
+def encode_response(
+    request_id: str,
+    input_sha256: str,
+    mask: np.ndarray,
+    latency_ms: float,
+) -> dict[str, object]:
+    """Encode one live result using the same bindings enforced by the client."""
+    binary = validate_binary_mask(mask)
+    if isinstance(latency_ms, bool) or not isinstance(latency_ms, (int, float)):
+        raise _invalid("response")
+    latency = float(latency_ms)
+    if not math.isfinite(latency) or latency < 0.0:
+        raise _invalid("response")
+    payload: dict[str, object] = {
+        "protocol": PROTOCOL_ID,
+        "request_id": _validate_request_id(request_id, kind="response"),
+        "input_sha256": _validate_sha256(input_sha256, kind="response"),
+        "model_id": MODEL_ID,
+        "checkpoint_sha256": CHECKPOINT_SHA256,
+        "mask_sha256": mask_sha256(binary),
+        "mask_png_base64": _png_base64(binary * 255, mode="L", kind="response"),
+        "latency_ms": latency,
+        "execution": "live",
+    }
+    _encoded_size(payload, maximum=MAX_RESPONSE_BYTES, kind="response")
+    return payload
+
+
 def _validate_expected(expected: object) -> dict[str, object]:
     bindings = _validate_schema(
         expected, fields=_EXPECTED_FIELDS, maximum=2048, kind="expected bindings"
