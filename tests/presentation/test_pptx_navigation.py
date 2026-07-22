@@ -92,6 +92,7 @@ def _relationships_xml(
     click_kind: str | None = None,
     duplicate_id: bool = False,
     invalid_id: bool = False,
+    unrelated_external: bool = False,
 ) -> bytes:
     layout_id = "1invalid" if invalid_id else "rIdLayout"
     relationships = [
@@ -109,6 +110,11 @@ def _relationships_xml(
     if click_kind == "external":
         relationships.append(
             f'<Relationship Id="rIdExisting" Type="{HYPERLINK_REL}" '
+            'Target="https://example.invalid/" TargetMode="External"/>'
+        )
+    if unrelated_external:
+        relationships.append(
+            f'<Relationship Id="rIdExternal" Type="{HYPERLINK_REL}" '
             'Target="https://example.invalid/" TargetMode="External"/>'
         )
     return (
@@ -238,6 +244,7 @@ def _make_deck(
     duplicate_relationship_id: int | None = None,
     invalid_relationship_id: int | None = None,
     click_kind: str | None = None,
+    unrelated_external_slide: int | None = None,
     presentation_order: list[int] | None = None,
     extra_entries: dict[str, bytes] | None = None,
 ) -> None:
@@ -285,6 +292,7 @@ def _make_deck(
                 click_kind=slide_click,
                 duplicate_id=number == duplicate_relationship_id,
                 invalid_id=number == invalid_relationship_id,
+                unrelated_external=number == unrelated_external_slide,
             )
         )
     if extra_entries:
@@ -480,16 +488,33 @@ def test_rejects_duplicate_zip_member(tmp_path: Path) -> None:
     assert not output.exists()
 
 
-@pytest.mark.parametrize("click_kind", ["conflicting", "external"])
+@pytest.mark.parametrize(
+    ("click_kind", "message"),
+    [("conflicting", "conflicting click"), ("external", "external relationship")],
+)
 def test_rejects_conflicting_or_external_navigation_click(
-    tmp_path: Path, click_kind: str
+    tmp_path: Path, click_kind: str, message: str
 ) -> None:
     injector = _load_injector()
     source = tmp_path / "base.pptx"
     output = tmp_path / "final.pptx"
     _make_deck(source, click_kind=click_kind)
 
-    with pytest.raises(injector.NavigationInjectionError, match="conflicting click"):
+    with pytest.raises(injector.NavigationInjectionError, match=message):
+        injector.inject_navigation(source, output)
+
+    assert not output.exists()
+
+
+def test_rejects_unrelated_external_relationship_without_writing_output(
+    tmp_path: Path,
+) -> None:
+    injector = _load_injector()
+    source = tmp_path / "base.pptx"
+    output = tmp_path / "final.pptx"
+    _make_deck(source, unrelated_external_slide=17)
+
+    with pytest.raises(injector.NavigationInjectionError, match="external relationship"):
         injector.inject_navigation(source, output)
 
     assert not output.exists()

@@ -296,7 +296,12 @@ def _validate_spine(parts: dict[str, bytes]) -> None:
 def _validate_all_relationship_parts(parts: dict[str, bytes]) -> None:
     for part in sorted(name for name in parts if name.endswith(".rels")):
         root = _parse_xml(parts[part], part)
-        _validate_relationships_root(root, part)
+        relationships = _validate_relationships_root(root, part)
+        if any(
+            relationship.attrib.get("TargetMode") == "External"
+            for relationship in relationships.values()
+        ):
+            raise NavigationInjectionError(f"{part} contains an external relationship")
 
 
 def _shape(root: ET.Element, name: str, part: str) -> ET.Element:
