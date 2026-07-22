@@ -309,6 +309,22 @@ function createDemoStage(slideData) {
   return stage;
 }
 
+function createChallengeStage(slideData) {
+  const stage = element("div", "challenge-stage");
+  const sections = [
+    ["Problem", slideData.challenge.problem],
+    ["Response", slideData.challenge.response],
+    ["Remaining limitation", slideData.challenge.limitation],
+  ];
+  sections.forEach(([label, text]) => {
+    const section = element("section", "challenge-card");
+    section.append(element("h3", "challenge-label", label));
+    section.append(element("p", "challenge-copy", text));
+    stage.append(section);
+  });
+  return stage;
+}
+
 function createReproducibilityStage(slideData) {
   const stage = element("div", "split-layout");
   const copy = element("div", "");
@@ -357,6 +373,7 @@ function createStage(slideData) {
     ablation: createAblationStage,
     "loop206-delta": createNegativeStage,
     "qualitative-demo": createDemoStage,
+    "challenge": createChallengeStage,
     reproducibility: createReproducibilityStage,
     conclusion: createConclusionStage,
   };

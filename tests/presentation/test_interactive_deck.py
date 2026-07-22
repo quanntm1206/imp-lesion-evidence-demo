@@ -25,7 +25,7 @@ def _sha256(path: Path) -> str:
 
 def test_content_contract_has_exact_slide_and_pipeline_targets() -> None:
     content = json.loads(CONTENT.read_text(encoding="utf-8"))
-    assert len(content["slides"]) == 12
+    assert len(content["slides"]) == 17
     assert [slide["id"] for slide in content["slides"]] == [
         f"s{number:02d}-{slug}"
         for number, slug in enumerate(
@@ -40,6 +40,11 @@ def test_content_contract_has_exact_slide_and_pipeline_targets() -> None:
                 "ablation-design",
                 "negative-result",
                 "demo",
+                "challenge-leakage",
+                "challenge-fairness",
+                "challenge-uncertainty",
+                "challenge-demo",
+                "challenge-repro",
                 "reproducibility",
                 "conclusion",
             ],
@@ -49,6 +54,67 @@ def test_content_contract_has_exact_slide_and_pipeline_targets() -> None:
     slide_ids = {slide["id"] for slide in content["slides"]}
     assert len(content["pipeline"]) == 6
     assert {node["target"] for node in content["pipeline"]} <= slide_ids
+
+
+def test_challenge_slides_have_bounded_three_part_contract() -> None:
+    content = json.loads(CONTENT.read_text(encoding="utf-8"))
+    challenges = content["slides"][10:15]
+
+    assert [slide["id"] for slide in challenges] == [
+        "s11-challenge-leakage",
+        "s12-challenge-fairness",
+        "s13-challenge-uncertainty",
+        "s14-challenge-demo",
+        "s15-challenge-repro",
+    ]
+    topic_terms = {
+        "s11-challenge-leakage": ("leakage", "split"),
+        "s12-challenge-fairness": ("comparison", "geometry"),
+        "s13-challenge-uncertainty": ("uncertainty", "adaptive"),
+        "s14-challenge-demo": ("demo", "trust"),
+        "s15-challenge-repro": ("reproducibility", "deployment"),
+    }
+    for slide in challenges:
+        assert slide["visual"] == "challenge"
+        assert set(slide["challenge"]) == {"problem", "response", "limitation"}
+        assert all(slide["challenge"][field].strip() for field in slide["challenge"])
+        text = json.dumps(slide).lower()
+        assert all(term in text for term in topic_terms[slide["id"]])
+
+
+def test_challenge_renderer_uses_dom_sections_without_pipeline_navigation() -> None:
+    script = (ROOT / "presentation" / "interactive" / "deck.js").read_text(
+        encoding="utf-8"
+    )
+    css = (ROOT / "presentation" / "interactive" / "deck.css").read_text(
+        encoding="utf-8"
+    )
+
+    marker = "function createChallengeStage(slideData)"
+    assert marker in script
+    start = script.find(marker)
+    end = script.find("function createReproducibilityStage(slideData)")
+    challenge_stage = script[start:end] if start >= 0 and end >= 0 else ""
+    assert '"challenge": createChallengeStage' in script
+    assert "Problem" in challenge_stage
+    assert "Response" in challenge_stage
+    assert "Remaining limitation" in challenge_stage
+    assert "slideData.challenge.problem" in challenge_stage
+    assert "slideData.challenge.response" in challenge_stage
+    assert "slideData.challenge.limitation" in challenge_stage
+    assert "createBreadcrumb" not in challenge_stage
+    assert "createBackButton" not in challenge_stage
+    assert (
+        '["s05-data", "s06-models", "s07-validation", "s08-ablation-design", '
+        '"s09-negative-result", "s10-demo"].includes(slideData.id)'
+    ) in script
+    assert ".challenge-stage" in css
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr));" in css
+    assert re.search(
+        r"@media \(max-width: 860px\)[\s\S]*?\.challenge-stage[\s\S]*?"
+        r"grid-template-columns: 1fr;",
+        css,
+    )
 
 
 def test_scientific_claims_are_bounded() -> None:

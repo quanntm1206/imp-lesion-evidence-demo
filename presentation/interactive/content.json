@@ -257,7 +257,97 @@
       ]
     },
     {
-      "id": "s11-reproducibility",
+      "body": [],
+      "claim": "A polished score cannot rescue a patient split whose identities cross evaluation boundaries.",
+      "challenge": {
+        "problem": "Leakage can make a validation split look more independent than it is.",
+        "response": "Audit identity groups and split assignments before interpreting model scores.",
+        "limitation": "Audits reduce detectable leakage; they do not prove every hidden relationship is absent."
+      },
+      "evidence_label": "challenge | leakage and split validity",
+      "id": "s11-challenge-leakage",
+      "kicker": "CHALLENGE 01 | LEAKAGE",
+      "notes": [
+        "Defense question: what evidence supports split validity before any model comparison?",
+        "Keep the distinction between detectable overlap and proof of no hidden relationship explicit."
+      ],
+      "title": "Can a clean score survive an invalid split?",
+      "visual": "challenge"
+    },
+    {
+      "body": [],
+      "claim": "A fair comparison needs its system differences and geometry contract stated before its ranking is discussed.",
+      "challenge": {
+        "problem": "Complete systems can differ in preprocessing, resolution, geometry, loss, and inference policy.",
+        "response": "Describe the comparison as system-level, then use matched arms for a causal geometry-preserving test.",
+        "limitation": "A system comparison cannot identify which individual component caused a difference."
+      },
+      "evidence_label": "challenge | fair comparison and geometry",
+      "id": "s12-challenge-fairness",
+      "kicker": "CHALLENGE 02 | FAIRNESS",
+      "notes": [
+        "Defense question: which comparison is descriptive, and which isolates one intervention?",
+        "Do not turn a system-level comparison into an encoder-only conclusion."
+      ],
+      "title": "What makes a comparison fair enough to interpret?",
+      "visual": "challenge"
+    },
+    {
+      "body": [],
+      "claim": "Adaptive validation supports development decisions, not a certainty claim about unseen performance.",
+      "challenge": {
+        "problem": "Repeated development choices can make validation point estimates selection-optimistic.",
+        "response": "Label uncertainty, report the available interval, and keep the protected test sealed.",
+        "limitation": "Recorded evidence has no paired confidence interval for the architecture comparison."
+      },
+      "evidence_label": "challenge | uncertainty and adaptive validation",
+      "id": "s13-challenge-uncertainty",
+      "kicker": "CHALLENGE 03 | UNCERTAINTY",
+      "notes": [
+        "Defense question: why is the architecture result descriptive rather than a superiority claim?",
+        "Separate selected-seed uncertainty from the conditional Loop206 interval."
+      ],
+      "title": "How much certainty can adaptive validation support?",
+      "visual": "challenge"
+    },
+    {
+      "body": [],
+      "claim": "A demo earns trust by showing only the lane, inputs, and claims its evidence contract authorizes.",
+      "challenge": {
+        "problem": "A convincing visual demo can be mistaken for accuracy or generalization evidence.",
+        "response": "Keep illustrative live outputs separate from audited fixed comparisons and state their scope.",
+        "limitation": "The demo does not establish paper RQ1 or a canonical live receipt."
+      },
+      "evidence_label": "challenge | demo trust",
+      "id": "s14-challenge-demo",
+      "kicker": "CHALLENGE 04 | DEMO TRUST",
+      "notes": [
+        "Defense question: which lane is illustrative, and which lane is audited fixed evidence?",
+        "Keep the non-clinical notice and no-generalization boundary visible."
+      ],
+      "title": "When should an interactive demo be trusted?",
+      "visual": "challenge"
+    },
+    {
+      "body": [],
+      "claim": "Reproducibility is strongest when deployment checks distinguish verified artifacts from unavailable historical experiments.",
+      "challenge": {
+        "problem": "Hash-bound release artifacts do not make incomplete historical training runs clone-runnable.",
+        "response": "Verify available source bytes in the strict local audit and document deployment boundaries.",
+        "limitation": "Missing code, configurations, and predictions prevent full experiment reproduction."
+      },
+      "evidence_label": "challenge | reproducibility and deployment",
+      "id": "s15-challenge-repro",
+      "kicker": "CHALLENGE 05 | REPRODUCIBILITY",
+      "notes": [
+        "Defense question: what is hash-bound, and what remains unavailable for a clone-runnable experiment?",
+        "Describe deployment verification separately from original-runtime equivalence."
+      ],
+      "title": "What can a reproducible deployment actually prove?",
+      "visual": "challenge"
+    },
+    {
+      "id": "s16-reproducibility",
       "kicker": "REPRODUCIBILITY + LIMITS",
       "title": "Claims are reproducible; full retraining is not yet clone-runnable",
       "claim": "The release binds claims, tables, figures, PDF, model IDs, and source reports by hash while explicitly disclosing missing experiment artifacts.",
@@ -276,7 +366,7 @@
       ]
     },
     {
-      "id": "s12-conclusion",
+      "id": "s17-conclusion",
       "kicker": "DEFENSIBLE TAKEAWAY",
       "title": "A narrower conclusion is the stronger scientific result",
       "claim": "nnU-Net records higher development-validation point estimates, the hard contour prior fails its matched train-screen gate, and no protected-test or state-of-the-art claim is authorized.",
