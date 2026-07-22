@@ -127,6 +127,20 @@ function addClaim(slide, data, top = 152, width = 1090, accent = C.teal) {
   });
 }
 
+function addBackToPipeline(slide) {
+  addBox(slide, "back-to-pipeline", 988, 606, 194, 30, C.tealSoft, {
+    geometry: "roundRect",
+    borderRadius: "rounded-xl",
+    lineFill: C.teal,
+    lineWidth: 1,
+  });
+  addText(slide, "back-to-pipeline-label", "Back to Pipeline", 1000, 611, 170, 18, {
+    fontSize: 12,
+    bold: true,
+    color: C.teal,
+    alignment: "center",
+  });
+}
 function addBulletLines(slide, data, left, top, width, rowHeight = 42, accent = C.teal) {
   data.body.forEach((line, i) => {
     addBox(slide, `${data.id}-bullet-${i}`, left, top + i * rowHeight + 9, 8, 8, accent, {
@@ -492,6 +506,29 @@ async function addDemoSlide(data, index) {
   });
 }
 
+function addChallengeSlide(data, index) {
+  const slide = presentation.slides.add();
+  addChrome(slide, data, index, C.rust, { titleFontSize: 33, titleHeight: 84 });
+  addClaim(slide, data, 170, 1070, C.rust);
+  const sections = [
+    ["problem", "PROBLEM", data.challenge.problem, C.rust],
+    ["response", "RESPONSE", data.challenge.response, C.teal],
+    ["limitation", "REMAINING LIMITATION", data.challenge.limitation, C.graphite],
+  ];
+  sections.forEach(([key, label, text, accent], sectionIndex) => {
+    const top = 294 + sectionIndex * 104;
+    addBox(slide, `challenge-${key}-rule`, 74, top, 8, 76, accent);
+    addText(slide, `challenge-${key}-label`, label, 104, top, 300, 24, {
+      fontSize: 15,
+      bold: true,
+      color: accent,
+    });
+    addText(slide, `challenge-${key}-text`, text, 104, top + 28, 1050, 48, {
+      fontSize: 19,
+      color: C.graphite,
+    });
+  });
+}
 function addReproSlide(data, index) {
   const slide = presentation.slides.add();
   addChrome(slide, data, index);
@@ -585,8 +622,17 @@ addValidationSlide(content.slides[6], 7);
 addAblationSlide(content.slides[7], 8);
 await addNegativeSlide(content.slides[8], 9);
 await addDemoSlide(content.slides[9], 10);
-addReproSlide(content.slides[10], 11);
-addConclusionSlide(content.slides[11], 12);
+addChallengeSlide(content.slides[10], 11);
+addChallengeSlide(content.slides[11], 12);
+addChallengeSlide(content.slides[12], 13);
+addChallengeSlide(content.slides[13], 14);
+addChallengeSlide(content.slides[14], 15);
+addReproSlide(content.slides[15], 16);
+addConclusionSlide(content.slides[16], 17);
+
+for (const slide of presentation.slides.items.slice(4, 10)) {
+  addBackToPipeline(slide);
+}
 
 await fs.mkdir(path.dirname(OUTPUT), { recursive: true });
 await fs.mkdir(QA_DIR, { recursive: true });

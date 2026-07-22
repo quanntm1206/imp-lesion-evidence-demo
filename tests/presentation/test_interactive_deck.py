@@ -217,3 +217,21 @@ def test_delivery_manifest_binds_outputs() -> None:
         output = ROOT / entry["path"]
         assert output.stat().st_size == entry["bytes"]
         assert _sha256(output) == entry["sha256"]
+
+def test_pptx_builder_renders_challenges_in_source_order() -> None:
+    build = (ROOT / "scripts/presentation/build_pptx.mjs").read_text(encoding="utf-8")
+
+    assert "function addChallengeSlide(data, index)" in build
+    assert "`challenge-${key}-label`" in build
+    assert "`challenge-${key}-text`" in build
+    assert "[\"problem\", \"PROBLEM\"" in build
+    assert "[\"response\", \"RESPONSE\"" in build
+    assert "[\"limitation\", \"REMAINING LIMITATION\"" in build
+    assert "function addBackToPipeline(slide)" in build
+    assert "presentation.slides.items.slice(4, 10)" in build
+    assert build.index("await addDemoSlide(content.slides[9], 10);") < build.index(
+        "addChallengeSlide(content.slides[10], 11);"
+    )
+    assert build.index("addChallengeSlide(content.slides[14], 15);") < build.index(
+        "addReproSlide(content.slides[15], 16);"
+    ) < build.index("addConclusionSlide(content.slides[16], 17);")
