@@ -1,25 +1,8 @@
 {
-  "schema_version": "imp.nnunet.model-manifest.v1",
-  "model_id": "L192-nnUNet-v2-raw-100ep",
-  "runtime": {
-    "distribution": "nnunetv2",
-    "version": "2.8.1",
-    "recovered_git_commit": "3e9fdc5fec7c8164f8fc2c6263af8be73278130e",
-    "environment_status": "reconstructed"
-  },
-  "input": {
-    "layout": "CZYX",
-    "channels": 3,
-    "spacing": [999.0, 1.0, 1.0]
-  },
   "artifacts": {
     "checkpoint_final.pth": {
       "sha256": "3814716033afd464dacc573f92a5a44ff20eb7f2163d99b4f16ecff8aa278ea2",
       "size": 267947879
-    },
-    "plans.json": {
-      "sha256": "b60e4defd229b03f7064dc5b66123545c91cdaa44c09d990b86690a94e1e08a7",
-      "size": 6379
     },
     "dataset.json": {
       "sha256": "eb33bcbad9d8d5c96168b3c12171392ffabf63ba4cbff4f2bf4badc98bf6487a",
@@ -28,6 +11,28 @@
     "dataset_fingerprint.json": {
       "sha256": "931da8aae52ffecd726d5928009ebdcae7002e24b035fad89177e0bc81dba85c",
       "size": 274020
+    },
+    "plans.json": {
+      "sha256": "b60e4defd229b03f7064dc5b66123545c91cdaa44c09d990b86690a94e1e08a7",
+      "size": 6379
     }
-  }
+  },
+  "input": {
+    "channels": 3,
+    "layout": "CZYX",
+    "spacing": [
+      999.0,
+      1.0,
+      1.0
+    ]
+  },
+  "model_id": "L192-nnUNet-v2-raw-100ep",
+  "release_manifest_sha256": "435606d5adc296be57405c65a9c725af3dff96c15f9aabf7ac0924d06387a264",
+  "runtime": {
+    "distribution": "nnunetv2",
+    "environment_status": "reconstructed",
+    "recovered_git_commit": "3e9fdc5fec7c8164f8fc2c6263af8be73278130e",
+    "version": "2.8.1"
+  },
+  "schema_version": "imp.nnunet.model-manifest.v1"
 }

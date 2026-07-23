@@ -1,86 +1,184 @@
-# Loop206 Demo Operations
+# Dual-Model Demo Operations
 
-## Scope Warning
+## Scope And Evidence Limits
 
-NON-CLINICAL RESEARCH DEMO. Segmentation output is not a diagnosis, clinical
-decision support, or medical-device output. Do not use it for patient care.
+NON-CLINICAL RESEARCH DEMO. Outputs are segmentation visualizations, not a
+diagnosis, clinical decision support, medical-device output, or proof that one
+model is superior.
 
-## Required Environment Variables
+The primary live path decodes one RGB image, runs IMP first, then the
+reconstructed nnU-Net runtime on the same contiguous RGB array. The runtime is
+reconstructed from pinned artifacts and dependencies. It is not claimed to be
+equivalent to the unavailable original nnU-Net environment.
 
-Set these names through the approved local secret manager or service wrapper.
-Do not put values in this runbook, source control, screenshots, receipts, or
-tunnel commands.
+The current browser E2E receipt is absent and unverified in this release;
+browser rendering and desktop/mobile screenshots remain unverified.
+
+- Public fixed samples are the preferred defense path.
+- Arbitrary uploads are `Exploratory - no ground truth`; show no accuracy,
+  Dice, IoU, HD95, ASSD, or comparative-performance claim.
+- Audited metrics belong only in the separate fixed-sample evidence tab.
+- `VAL_GATE_FAILED_NO_TEST` means protected test-v3 remains sealed. Never
+  relabel train-screen or fixed-cache evidence as protected-test evidence.
+- Receipts contain current live hashes, model/checkpoint identity, geometry,
+  latency, and device only. They contain no local path, username, diagnosis,
+  or accuracy for an arbitrary upload.
+
+## Required Local Inputs
+
+Keep all values outside source control, screenshots, receipts, and tunnel
+commands:
 
 - `IMP_LOOP206_CONTROL_CHECKPOINT`
 - `IMP_LOOP206_CANDIDATE_CHECKPOINT`
 - `IMP_LOOP206_DATA_ROOT`
+- `$PythonExe`, set to the local Python executable containing the pinned demo
+  dependencies; the guarded launcher accepts it with `-PythonExe` and records
+  the resolved executable identity without storing this private path in Git
+- verified Loop192 bundle under
+  `demo_runtime/nnunet/recovered-container-final2`, or
+  pass its private path with `run_sidecar.ps1 -BundlePath`
 
-The current release registry has no approved `prior_receipt_sha256`. Do not set `IMP_LOOP206_PRIOR` or `IMP_LOOP206_PRIOR_RECEIPT`; configured values are rejected before receipt parsing or deserialization. The guarded public launcher also clears both names.
+The release registry intentionally has no approved `prior_receipt_sha256`.
+Do not set `IMP_LOOP206_PRIOR` or `IMP_LOOP206_PRIOR_RECEIPT`; the guarded
+launcher clears them.
 
-## Preflight
+## One-Time Recovery And Image Build
 
-1. Verify the evidence registry semantic hash. Require it to match
-   `artifact_manifest.json`, fixed-cache receipts, and the paper-audit receipt.
-2. Verify control checkpoint, candidate checkpoint, candidate-cache manifest,
-   and zero-cache manifest SHA-256 values against the approved model registry
-   and fixed-cache receipt.
-3. Confirm the release registry leaves `prior_receipt_sha256` unset and the
-   arbitrary-upload candidate remains disabled. A future release may enable it
-   only by pinning an approved passed-receipt digest after exact 76/76 parity;
-   do not substitute an adjacent self-hash or approximate prior.
-4. Run the paper audit. It must report `passed=true errors=0` before release.
+Recovery is a private, local operation. Open an elevated PowerShell window.
+Set `IMP_NNUNET_VHD` to the private source VHD and `IMP_NNUNET_REPORT` to the
+pinned Loop192 report. The output directory must not already exist or must be
+empty:
 
-## Local Start And Health
+```powershell
+if ([string]::IsNullOrWhiteSpace($env:IMP_LEGACY_LINUX_USER)) {
+  throw 'Set IMP_LEGACY_LINUX_USER to the source VHD account name.'
+}
+$outputRoot = Join-Path (Resolve-Path '.').Path 'demo_runtime/nnunet/recovered-container-final2'
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/recover_nnunet_artifacts.ps1 `
+  -VhdPath $env:IMP_NNUNET_VHD `
+  -ReportPath $env:IMP_NNUNET_REPORT `
+  -OutputRoot $outputRoot `
+  -PythonExe '.venv-win\Scripts\python.exe' `
+  -LegacyLinuxUser $env:IMP_LEGACY_LINUX_USER
+```
 
-Browser rendering and desktop/mobile screenshots remain unverified. This section defines the required operator verification; it does not record that verification as complete.
+Require `recovery=passed`, exact artifact hashes, `source_vhd_unchanged=true`,
+and cleanup proof that the filesystem is unmounted and the VHD detached. Stop
+on any cleanup warning; do not reuse a partial output directory. Then require
+`recovery_receipt.json` SHA-256
+`0470993eeea5fd39a970400af2465a3f43cfbd1c1bb75ccda2202ef5de362a77`.
+Do not push the recovered bundle, source VHD, checkpoint, dataset, or receipt.
 
-1. Start `scripts/demo/run_demo.ps1` on the loopback interface only. Direct
-   `lesion-demo` launch is rejected because it lacks the launcher-owned upload
-   session guard; direct `lesion-demo --share` is always rejected.
-2. Open the local workbench. Confirm the degraded-runtime banner, evidence
-   registry hash, pinned model hashes, exact fixed-cache selector, and
-   non-clinical warning render.
-3. Run one allowlisted fixed-cache comparison without ground truth. Confirm no
-   Dice, IoU, boundary, HD95, or ASSD metrics are shown.
-4. Run the same approved sample with provider-bound ground truth. Confirm both
-   model hashes, the evidence badge, and a path-free JSON receipt.
-5. Verify queue concurrency remains `1`; do not add workers or a parallel
-   inference queue.
+Build the pinned reconstructed runtime from the repository root:
 
-## Upload Handling
+```powershell
+docker build -t imp-nnunet-sidecar:loop192 -f sidecar/nnunet/Dockerfile .
+```
 
-- Treat uploads as ephemeral control-only preview inputs.
-- The server rejects uploads above 16 MiB, and Pillow rejects decoded images
-  above 16 megapixels before Gradio image conversion.
-- Clear temporary uploads and generated receipt files after each session and
-  after every failed request.
-- Never retain raw uploads, masks, output arrays, or absolute filesystem paths
-  in logs, receipts, browser downloads, or tunnel diagnostics.
-- Candidate output for arbitrary uploads remains disabled unless exact prior
-  parity is re-established through the approved evidence workflow.
+The launcher requires image ID
+`sha256:86bd77c03c3918e3638565e29417cdf4360b499a0813fbc425dc36645f026f2d`.
+Stop if the build does not match. Do not weaken the pin.
 
-## Tunnel Procedure
+## Guarded Start Order
 
-1. Complete local health checks first.
-2. Start the approved tunnel service through its managed configuration; do not
-   place credentials, public addresses, or tokens in shell history or logs.
-3. Recheck the external surface: non-clinical warning, candidate lockout,
-   fixed-cache-only comparison, one-worker queue, and path-free receipts.
-4. Stop the tunnel immediately after review. Confirm no public listener remains
-   and delete transient tunnel logs containing request metadata.
+Use three PowerShell terminals. Required order: sidecar, Gradio, Cloudflare.
+Choose one safe, previously unused public run ID before starting the sidecar:
 
-## Failure Recovery
+```powershell
+$RunId = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssfffffffZ').ToLowerInvariant()
+```
 
-1. Stop the service and tunnel when a hash, prior parity, cache, registry, or
-   audit check fails.
-2. Preserve only the path-free failure receipt and command exit status.
-3. Restore the last approved immutable model, prior, cache, registry, and
-   manifest set. Re-run preflight and local health checks before restart.
-4. If candidate authorization fails, restart only in control-preview plus exact
-   fixed-cache mode. Do not bypass the lockout.
+1. Validate hashes, Docker GPU access, checkpoint load, CUDA/API identity, and
+   sidecar health without leaving a container running:
 
-## Local-Only Fallback
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/run_sidecar.ps1 -CheckOnly -PreserveMode -RunId $RunId
+```
 
-Keep the service loopback-only when tunnel approval, health verification, or
-any evidence check is unavailable. Operators may review fixed-cache evidence
-locally; they must not expose an unverified service publicly.
+This creates a unique launcher-generated, owner-bound container name, then
+stops that exact container after pinned health succeeds. Preserve mode must
+retain and re-inspect the exact container ID, name, and owner with
+`State.Running=false`; absence is a failure. Require port `7862` to be closed
+and immutable owner/start/stop journals to remain. Absence is accepted only for
+non-preserve auto-remove. The stopped preserved container name is intentionally
+not reused or removed.
+
+2. Start the persistent sidecar. It publishes only
+   `127.0.0.1:7862:7862`, mounts the model read-only, uses one GPU, and writes
+   a launcher-owned record:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/run_sidecar.ps1 -PreserveMode -RunId $RunId
+```
+
+3. In terminal 2, run the guarded Gradio preflight. It requires exact sidecar
+   identity and a complete CUDA dual-model
+   smoke inference before binding:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/run_demo.ps1 -CheckOnly -PublicTunnelMode -PreserveMode -RunId $RunId -PythonExe $PythonExe
+```
+
+Require `preflight=passed` and `dual_smoke=passed`. Then start Gradio:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/run_demo.ps1 -PublicTunnelMode -PreserveMode -RunId $RunId -PythonExe $PythonExe
+```
+
+Confirm the app is available only at `http://127.0.0.1:7860`. Run two
+materially different public samples. Both live arms must complete; mask hashes
+must change across inputs. Repeat one sample to record same-current-runtime
+determinism only, not original-runtime equivalence.
+
+4. In terminal 3, start a temporary Cloudflare Quick Tunnel only after local
+   inference passes:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/run_tunnel.ps1 -PreserveMode -RunId $RunId
+```
+
+The wrapper accepts only the preserved public-mode Gradio journal with the
+current release-manifest digest, then verifies launcher/process/session/config
+identity. Cloudflare exposes only `http://127.0.0.1:7860`. Port 7862 remains
+local.
+
+## Public Rehearsal
+
+The Quick Tunnel is temporary and unauthenticated. Its public mode renders and
+accepts only bundled public or synthetic inputs; no upload control or upload API
+is exposed, and forged upload callbacks are rejected server-side. Never use
+patient, identifying, confidential, or unpublished images. The tunnel itself is
+not an access-control boundary.
+
+From a separate network, load the temporary URL and run one approved public
+sample. Verify Original, IMP, and nnU-Net panels all correspond to the current
+request. Do not publish the URL, terminal output, upload, receipt, or screenshot
+containing the URL.
+
+## Failure Behavior
+
+- If IMP fails, show neither model result and create no receipt.
+- If nnU-Net fails after IMP, the current IMP result may remain visible;
+  clear nnU-Net output and receipt. Never reuse a stale nnU-Net mask.
+- Reject malformed JSON, request/hash/model/checkpoint/geometry drift, CPU
+  fallback, oversized input, and non-binary/non-finite masks.
+- Show a sanitized user-facing error. Never show traceback, Docker log, local
+  path, cache, checkpoint location, or prior request output.
+- Keep the app loopback-only when any preflight, ownership, evidence, or
+  outside-network smoke check is unavailable.
+
+## Ordered Shutdown And Cleanup Proof
+
+Use the launcher-owned stop script. It attempts every step, aggregates errors,
+and enforces this order: Cloudflare, Gradio, sidecar.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/stop_demo.ps1 -PreserveMode -RunId $RunId
+```
+
+Require successful cleanup output and confirm ports 7860 and 7862 are closed.
+The named container must be absent. Preserve-mode journals, receipts, caches,
+sessions, and containers are retained as append-only evidence; unrelated runtime
+files must remain. Treat any nonzero exit as an incomplete shutdown and do not
+reopen the tunnel until resolved.

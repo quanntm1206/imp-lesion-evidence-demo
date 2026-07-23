@@ -16,13 +16,37 @@ import warnings
 import numpy as np
 from PIL import Image
 
+from lesion_robustness.demo.runtime_identity import (
+    CHECKPOINT_SHA256,
+    MODEL_ID,
+    PROTOCOL_ID,
+)
 
-PROTOCOL_ID = "imp.nnunet.sidecar.v1"
-MODEL_ID = "L192-nnUNet-v2-raw-100ep"
-CHECKPOINT_SHA256 = "3814716033afd464dacc573f92a5a44ff20eb7f2163d99b4f16ecff8aa278ea2"
+
 MAX_PIXELS = 16_000_000
 MAX_REQUEST_BYTES = 16 * 1024 * 1024
 MAX_RESPONSE_BYTES = 20 * 1024 * 1024
+PROHIBITED_PUBLIC_METADATA_TOKENS = frozenset(
+    {
+        "dice",
+        "iou",
+        "bf1",
+        "hd95",
+        "assd",
+        "sota",
+        "superiority",
+        "clinical",
+        "diagnosis",
+        "path",
+        "username",
+        "traceback",
+        "http://",
+        "https://",
+        "url",
+        "filename",
+        "environment",
+    }
+)
 
 _REQUEST_FIELDS = frozenset({"protocol", "request_id", "input_sha256", "image_png_base64"})
 _RESPONSE_FIELDS = frozenset(
@@ -54,6 +78,12 @@ _REQUEST_ID = re.compile(r"[0-9a-f]{32}\Z")
 
 class ProtocolError(ValueError):
     """Raised when an untrusted sidecar payload fails protocol validation."""
+
+
+def is_public_metadata_text(value: object) -> bool:
+    return isinstance(value, str) and not any(
+        token in value.lower() for token in PROHIBITED_PUBLIC_METADATA_TOKENS
+    )
 
 
 @dataclass(frozen=True)

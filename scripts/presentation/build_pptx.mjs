@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -11,11 +12,29 @@ const WORKSPACE = path.resolve(
 );
 const OUTPUT = path.resolve(
   process.env.OUTPUT_PPTX ||
-    path.join(ROOT, "outputs", "imp-lesion-evidence-defense.pptx"),
+    path.join(ROOT, "outputs", "imp-lesion-evidence-defense-base.pptx"),
 );
 const QA_DIR = path.resolve(
   process.env.PRESENTATION_QA_DIR || path.join(WORKSPACE, "qa"),
 );
+
+const content = JSON.parse(
+  await fs.readFile(path.join(ROOT, "presentation", "interactive", "content.json"), "utf8"),
+);
+const releaseBytes = await fs.readFile(path.join(ROOT, "release", "imp_release_manifest.json"));
+const releaseDigest = createHash("sha256").update(releaseBytes).digest("hex");
+const release = JSON.parse(releaseBytes.toString("ascii"));
+const releaseComparisons = release.comparisons.filter(
+  (comparison) => comparison.id === "paper_rq1" || comparison.id === "paper_rq2",
+);
+if (
+  release.schema_version !== "imp.release.manifest.v1" ||
+  content.release_manifest_sha256 !== releaseDigest ||
+  JSON.stringify(content.release_comparisons) !== JSON.stringify(releaseComparisons)
+) {
+  throw new Error("release manifest projection mismatch");
+}
+const releaseNote = `Release manifest SHA-256: ${releaseDigest}`;
 
 const artifactEntry = path.join(
   WORKSPACE,
@@ -27,10 +46,6 @@ const artifactEntry = path.join(
 );
 const { Presentation, PresentationFile } = await import(
   pathToFileURL(artifactEntry).href
-);
-
-const content = JSON.parse(
-  await fs.readFile(path.join(ROOT, "presentation", "interactive", "content.json"), "utf8"),
 );
 const assetDir = path.join(ROOT, "presentation", "interactive", "assets");
 
@@ -114,7 +129,7 @@ function addChrome(slide, data, index, accent = C.teal, options = {}) {
     color: accent,
     alignment: "right",
   });
-  slide.speakerNotes.textFrame.setText(data.notes);
+  slide.speakerNotes.textFrame.setText(`${data.notes}\n\n${releaseNote}`);
 }
 
 function addClaim(slide, data, top = 152, width = 1090, accent = C.teal) {
@@ -141,6 +156,7 @@ function addBackToPipeline(slide) {
     alignment: "center",
   });
 }
+
 function addBulletLines(slide, data, left, top, width, rowHeight = 42, accent = C.teal) {
   data.body.forEach((line, i) => {
     addBox(slide, `${data.id}-bullet-${i}`, left, top + i * rowHeight + 9, 8, 8, accent, {
@@ -209,7 +225,7 @@ function addTitleSlide(data) {
     color: C.ivory,
     alignment: "center",
   });
-  slide.speakerNotes.textFrame.setText(data.notes);
+  slide.speakerNotes.textFrame.setText(`${data.notes}\n\n${releaseNote}`);
 }
 
 function addLeakageSlide(data, index) {
@@ -294,7 +310,7 @@ function addPipelineSlide(data, index) {
       color,
     });
   });
-  addText(slide, "pipeline-html-note", "Interactive navigation and smooth transitions are available in the offline HTML edition.", 72, 496, 1120, 50, {
+  addText(slide, "pipeline-html-note", "Select a module for its evidence detail. Every detail slide returns here.", 72, 496, 1120, 50, {
     fontSize: 18,
     color: C.muted,
     alignment: "center",
@@ -454,8 +470,8 @@ async function addNegativeSlide(data, index) {
     color: C.muted,
     alignment: "center",
   });
-  addText(slide, "negative-boundary", "Candidate rejected before protected evaluation.", 882, 584, 302, 38, {
-    fontSize: 15,
+  addText(slide, "negative-boundary", "Candidate rejected before protected evaluation.", 850, 572, 360, 24, {
+    fontSize: 13,
     bold: true,
     color: C.rust,
     alignment: "center",
@@ -466,40 +482,66 @@ async function addDemoSlide(data, index) {
   const slide = presentation.slides.add();
   addChrome(slide, data, index);
   addClaim(slide, data, 150, 1070);
-  const bytes = await fs.readFile(path.join(assetDir, "qualitative-demo.png"));
-  slide.images.add({
-    blob: bytes,
-    contentType: "image/png",
-    alt: "Fixed-cache lesion segmentation comparison with authorized ground truth",
-    fit: "contain",
-    position: { left: 68, top: 266, width: 850, height: 340 },
-  });
-  addText(slide, "demo-parity", "0/76", 974, 282, 196, 70, {
-    fontFamily: "Georgia",
-    fontSize: 52,
+  addText(slide, "demo-fixed-caption", "AUDITED FIXED L206 LANE", 70, 272, 612, 26, {
+    fontSize: 15,
     bold: true,
     color: C.rust,
     alignment: "center",
   });
-  addText(slide, "demo-parity-label", "candidate prior parity", 950, 348, 244, 40, {
-    fontSize: 16,
+  addText(slide, "demo-fixed-evidence", "Fixed-cache sample: original + control mask + candidate mask", 86, 304, 580, 36, {
+    fontSize: 13,
+    bold: true,
+    color: C.graphite,
+    alignment: "center",
+  });
+  addText(slide, "demo-fixed-samples", "ISIC_0000050  |  ISIC_0012690", 86, 326, 580, 20, {
+    fontSize: 12,
     bold: true,
     color: C.muted,
     alignment: "center",
   });
-  addText(slide, "demo-rule", "FIXED CACHE\ncontrol + candidate + authorized truth", 950, 422, 244, 74, {
-    fontSize: 18,
-    bold: true,
-    color: C.teal,
-    alignment: "center",
+  // Derived from qualitative-demo.png rows y=390..660; middle authorized row only.
+  const qualitativeBytes = await fs.readFile(path.join(assetDir, "qualitative-demo-middle.png"));
+  slide.images.add({
+    blob: qualitativeBytes,
+    contentType: "image/png",
+    alt: "Authorized fixed-cache row showing RGB, ground truth, IMP control mask, and candidate mask",
+    fit: "contain",
+    position: { left: 70, top: 356, width: 612, height: 132 },
   });
-  addText(slide, "demo-upload", "ARBITRARY UPLOAD\ncontrol only", 950, 516, 244, 60, {
-    fontSize: 18,
+  addText(slide, "demo-fixed-boundary", "illustrative fixed-cache examples; not protected-test evidence", 70, 570, 612, 24, {
+    fontSize: 13,
     bold: true,
     color: C.rust,
     alignment: "center",
   });
-  addText(slide, "demo-clinical", "Non-clinical research demo; not a diagnosis.", 950, 588, 244, 34, {
+  addText(slide, "demo-fixed-detail", "Ground truth is authorized only in the audited fixed lane.", 70, 596, 612, 22, {
+    fontSize: 12,
+    bold: true,
+    color: C.rust,
+    alignment: "center",
+  });
+  addBox(slide, "demo-lane-divider", 724, 274, 2, 332, C.line);
+  addText(slide, "demo-live-caption", "LIVE PUBLIC/SYNTHETIC LANE", 754, 276, 414, 30, {
+    fontSize: 16,
+    bold: true,
+    color: C.teal,
+    alignment: "center",
+  });
+  addText(slide, "demo-live-flow", "SAME RGB, SEQUENTIAL\nL206-control-s206\nL192-nnUNet-v2-raw-100ep", 754, 326, 414, 118, {
+    fontFamily: "Georgia",
+    fontSize: 20,
+    bold: true,
+    color: C.graphite,
+    alignment: "center",
+  });
+  addText(slide, "demo-live-limit", "2 public samples: illustrative masks + hash receipts\nNo ground truth. No accuracy. Not paper RQ1.", 754, 476, 414, 70, {
+    fontSize: 17,
+    bold: true,
+    color: C.rust,
+    alignment: "center",
+  });
+  addText(slide, "demo-clinical", "Non-clinical research demo; not a diagnosis.", 754, 574, 414, 30, {
     fontSize: 14,
     color: C.muted,
     alignment: "center",
@@ -529,28 +571,29 @@ function addChallengeSlide(data, index) {
     });
   });
 }
+
 function addReproSlide(data, index) {
   const slide = presentation.slides.add();
-  addChrome(slide, data, index);
+  addChrome(slide, data, index, C.teal, { titleFontSize: 32, titleHeight: 48 });
   addClaim(slide, data, 150, 1070);
   const columns = [
     {
       x: 74,
       color: C.teal,
       title: "HASH-BOUND",
-      text: "Claims\nTables + figures\nCompiled PDF\nModel IDs\nSource reports",
+      text: "Recorded claims\nTables + figures\nCompiled PDF\nModel IDs\nSource reports",
     },
     {
       x: 452,
       color: C.sand,
-      title: "RUNTIME-BOUND",
-      text: "Checkpoints\nData\nCaches\nSecrets\nStartup verification",
+      title: "RECONSTRUCTED RUNTIME",
+      text: "L192 runtime identity\nStartup verification\nNo original equivalence\nNo full E2E proof",
     },
     {
       x: 830,
       color: C.rust,
-      title: "NOT YET CLONE-RUNNABLE",
-      text: "Loop191/192 configs\nImplementation modules\nPaired predictions\nPhysical laptop evidence",
+      title: "NOT CLONE-RUNNABLE",
+      text: "Historical training code\nLoop191/192 configs\nPaired predictions\nRQ1-v2 pending until P1",
     },
   ];
   columns.forEach((column, i) => {

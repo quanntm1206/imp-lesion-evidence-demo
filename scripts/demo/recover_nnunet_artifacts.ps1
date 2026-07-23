@@ -12,11 +12,17 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$OutputRoot,
 
-    [string]$PythonExe = ''
+    [string]$PythonExe = '',
+
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [ValidatePattern('^(?!\.{1,2}$)[A-Za-z0-9_.-]+$')]
+    [string]$LegacyLinuxUser
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$LegacyLinuxHome = 'home/' + $LegacyLinuxUser
 
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -465,15 +471,15 @@ function New-ContainerRecoveryArguments {
 
 function Get-ContainerRecoveryEntries {
     return @(
-        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_results/Dataset192_IMPlesionCleanV3RGB256/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_all/checkpoint_final.pth'; Target = 'checkpoint_final.pth' },
-        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_preprocessed/Dataset192_IMPlesionCleanV3RGB256/nnUNetPlans.json'; Target = 'nnUNetPlans.json' },
-        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_preprocessed/Dataset192_IMPlesionCleanV3RGB256/dataset_fingerprint.json'; Target = 'dataset_fingerprint.json' },
-        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_raw/Dataset192_IMPlesionCleanV3RGB256/dataset.json'; Target = 'dataset.json' },
-        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_results/Dataset192_IMPlesionCleanV3RGB256/nnUNetTrainer_100epochs__nnUNetPlans__2d/plans.json'; Target = 'plans.json' },
-        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/external_repos/loop170/nnUNet/pyproject.toml'; Target = 'pyproject.toml' },
-        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/external_repos/loop170/nnUNet/nnunetv2.egg-info/PKG-INFO'; Target = 'PKG-INFO' },
-        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/external_repos/loop170/nnUNet/.git/HEAD'; Target = 'HEAD' },
-        [pscustomobject]@{ Source = 'home/admin_mugen/imp_cache/external_repos/loop170/nnUNet/.git/refs/heads/master'; Target = 'master' }
+        [pscustomobject]@{ Source = "$LegacyLinuxHome/imp_cache/loop192_nnunet_clean_v3_results/Dataset192_IMPlesionCleanV3RGB256/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_all/checkpoint_final.pth"; Target = 'checkpoint_final.pth' },
+        [pscustomobject]@{ Source = "$LegacyLinuxHome/imp_cache/loop192_nnunet_clean_v3_preprocessed/Dataset192_IMPlesionCleanV3RGB256/nnUNetPlans.json"; Target = 'nnUNetPlans.json' },
+        [pscustomobject]@{ Source = "$LegacyLinuxHome/imp_cache/loop192_nnunet_clean_v3_preprocessed/Dataset192_IMPlesionCleanV3RGB256/dataset_fingerprint.json"; Target = 'dataset_fingerprint.json' },
+        [pscustomobject]@{ Source = "$LegacyLinuxHome/imp_cache/loop192_nnunet_clean_v3_raw/Dataset192_IMPlesionCleanV3RGB256/dataset.json"; Target = 'dataset.json' },
+        [pscustomobject]@{ Source = "$LegacyLinuxHome/imp_cache/loop192_nnunet_clean_v3_results/Dataset192_IMPlesionCleanV3RGB256/nnUNetTrainer_100epochs__nnUNetPlans__2d/plans.json"; Target = 'plans.json' },
+        [pscustomobject]@{ Source = "$LegacyLinuxHome/imp_cache/external_repos/loop170/nnUNet/pyproject.toml"; Target = 'pyproject.toml' },
+        [pscustomobject]@{ Source = "$LegacyLinuxHome/imp_cache/external_repos/loop170/nnUNet/nnunetv2.egg-info/PKG-INFO"; Target = 'PKG-INFO' },
+        [pscustomobject]@{ Source = "$LegacyLinuxHome/imp_cache/external_repos/loop170/nnUNet/.git/HEAD"; Target = 'HEAD' },
+        [pscustomobject]@{ Source = "$LegacyLinuxHome/imp_cache/external_repos/loop170/nnUNet/.git/refs/heads/master"; Target = 'master' }
     )
 }
 
@@ -708,11 +714,11 @@ function Invoke-WindowsAttachRecovery {
     }
 
     $requiredArtifacts = @(
-        'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_results/Dataset192_IMPlesionCleanV3RGB256/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_all/checkpoint_final.pth',
-        'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_preprocessed/Dataset192_IMPlesionCleanV3RGB256/nnUNetPlans.json',
-        'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_preprocessed/Dataset192_IMPlesionCleanV3RGB256/dataset_fingerprint.json',
-        'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_raw/Dataset192_IMPlesionCleanV3RGB256/dataset.json',
-        'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_results/Dataset192_IMPlesionCleanV3RGB256/nnUNetTrainer_100epochs__nnUNetPlans__2d/plans.json'
+        "$LegacyLinuxHome/imp_cache/loop192_nnunet_clean_v3_results/Dataset192_IMPlesionCleanV3RGB256/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_all/checkpoint_final.pth",
+        "$LegacyLinuxHome/imp_cache/loop192_nnunet_clean_v3_preprocessed/Dataset192_IMPlesionCleanV3RGB256/nnUNetPlans.json",
+        "$LegacyLinuxHome/imp_cache/loop192_nnunet_clean_v3_preprocessed/Dataset192_IMPlesionCleanV3RGB256/dataset_fingerprint.json",
+        "$LegacyLinuxHome/imp_cache/loop192_nnunet_clean_v3_raw/Dataset192_IMPlesionCleanV3RGB256/dataset.json",
+        "$LegacyLinuxHome/imp_cache/loop192_nnunet_clean_v3_results/Dataset192_IMPlesionCleanV3RGB256/nnUNetTrainer_100epochs__nnUNetPlans__2d/plans.json"
     )
     $packageSpecs = @(
         [ordered]@{ slug = 'nnunetv2'; normalized = 'nnunetv2' },
@@ -730,7 +736,7 @@ function Invoke-WindowsAttachRecovery {
     $wslAttachAttempted = $false
     $filesystemMountAttempted = $false
     $physicalDrive = $null
-    $linuxMount = "/mnt/wsl/loop192-recovery-$PID"
+    $linuxMount = '/' + "mnt/wsl/loop192-recovery-$PID"
     $cleanupErrors = @()
     $operationError = $null
 
@@ -743,7 +749,7 @@ function Invoke-WindowsAttachRecovery {
             throw 'Windows disk is not read-only'
         }
 
-        $physicalDrive = "\\.\PHYSICALDRIVE$diskNumber"
+        $physicalDrive = ('\' + '\.\PHYSICALDRIVE' + $diskNumber)
         $wslAttachAttempted = $true
         [void](Invoke-NativeChecked -FilePath 'wsl.exe' -Arguments @('--mount', $physicalDrive, '--bare') -Label 'bare WSL attachment')
 

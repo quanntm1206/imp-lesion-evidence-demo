@@ -21,7 +21,7 @@
 - Never use cached output to satisfy a live request. Sidecar failure clears the nnU-Net panel; incomplete runs cannot download a receipt.
 - Receipts contain hashes, public model metadata, preprocessing, protocol, status, and latency only; no local path, username, environment variable, stack trace, or upload filename.
 - Treat Cloudflare Quick Tunnel as temporary and unauthenticated. Use only synthetic or already-public rehearsal images.
-- Never repair, unregister, reset, compact, resize, overwrite, import in place, or delete `Ubuntu-E` or `E:\WSL\Ubuntu-E\ext4.vhdx`.
+- Never repair, unregister, reset, compact, resize, overwrite, import in place, or delete `Ubuntu-E` or `<VHD_PATH>`.
 - Attach the source VHD read-only and mount ext4 with `ro,noload`; abort unless both properties are proved before extraction.
 - Preserve the existing forensic ivory/graphite/teal/rust design language; meet WCAG AA; support 1440x900 and 390x844; honor `prefers-reduced-motion`.
 
@@ -170,17 +170,17 @@ Expected: FAIL because the script is absent.
 
 - [ ] **Step 3: Implement the guarded PowerShell workflow**
 
-The script must: require elevation; verify the resolved VHD equals the explicit input; record length, creation time, last-write time; run `wsl --terminate Ubuntu-E`; use `Mount-VHD -Path $resolvedVhd -ReadOnly -Passthru`; prove `Get-Disk -Number $diskNumber` reports read-only; expose only that physical disk with `wsl --mount "\\.\PHYSICALDRIVE$diskNumber" --bare`; in `wsl --system`, locate the new ext4 block device, mount it with `mount -t ext4 -o ro,noload`; prove `/proc/mounts` contains both `ro` and `noload`; copy the exact allowlist; unmount; call `wsl --unmount`; call `Dismount-VHD` in `finally`; compare source length and timestamps; then call the verifier.
+The script must: require elevation; verify the resolved VHD equals the explicit input; record length, creation time, last-write time; run `wsl --terminate Ubuntu-E`; use `Mount-VHD -Path $resolvedVhd -ReadOnly -Passthru`; prove `Get-Disk -Number $diskNumber` reports read-only; expose only that physical disk with `wsl --mount <PHYSICAL_DRIVE> --bare`; in `wsl --system`, locate the new ext4 block device, mount it with `mount -t ext4 -o ro,noload`; prove `/proc/mounts` contains both `ro` and `noload`; copy the exact allowlist; unmount; call `wsl --unmount`; call `Dismount-VHD` in `finally`; compare source length and timestamps; then call the verifier.
 
 Artifact allowlist:
 
 ```powershell
 $Required = @(
-  'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_results/Dataset192_IMPlesionCleanV3RGB256/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_all/checkpoint_final.pth',
-  'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_preprocessed/Dataset192_IMPlesionCleanV3RGB256/nnUNetPlans.json',
-  'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_preprocessed/Dataset192_IMPlesionCleanV3RGB256/dataset_fingerprint.json',
-  'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_raw/Dataset192_IMPlesionCleanV3RGB256/dataset.json',
-  'home/admin_mugen/imp_cache/loop192_nnunet_clean_v3_results/Dataset192_IMPlesionCleanV3RGB256/nnUNetTrainer_100epochs__nnUNetPlans__2d/plans.json'
+  '<LEGACY_HOME>/imp_cache/loop192_nnunet_clean_v3_results/Dataset192_IMPlesionCleanV3RGB256/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_all/checkpoint_final.pth',
+  '<LEGACY_HOME>/imp_cache/loop192_nnunet_clean_v3_preprocessed/Dataset192_IMPlesionCleanV3RGB256/nnUNetPlans.json',
+  '<LEGACY_HOME>/imp_cache/loop192_nnunet_clean_v3_preprocessed/Dataset192_IMPlesionCleanV3RGB256/dataset_fingerprint.json',
+  '<LEGACY_HOME>/imp_cache/loop192_nnunet_clean_v3_raw/Dataset192_IMPlesionCleanV3RGB256/dataset.json',
+  '<LEGACY_HOME>/imp_cache/loop192_nnunet_clean_v3_results/Dataset192_IMPlesionCleanV3RGB256/nnUNetTrainer_100epochs__nnUNetPlans__2d/plans.json'
 )
 ```
 
@@ -192,7 +192,7 @@ Run: `powershell -NoProfile -Command "$errors=$null; [void][Management.Automatio
 
 Expected: exit `0`.
 
-Run without elevation: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/recover_nnunet_artifacts.ps1 -PythonExe 'E:\0. IMP\.venv-win\Scripts\python.exe' -VhdPath 'E:\WSL\Ubuntu-E\ext4.vhdx' -ReportPath 'E:\0. IMP\.artifacts\preprocessing_search\current_bdou_loop192_nnunet_clean_v3_report.json' -OutputRoot 'E:\0. IMP\.worktrees\dual-live-demo\demo_runtime\nnunet\recovered'`
+Run without elevation: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/recover_nnunet_artifacts.ps1 -PythonExe '<PYTHON_EXE>' -VhdPath '<VHD_PATH>' -ReportPath '<REPORT_PATH>' -OutputRoot '<OUTPUT_ROOT>'`
 
 Expected: nonzero before any mount, message `Administrator token required`; no source metadata change.
 
@@ -202,10 +202,10 @@ Run from an elevated PowerShell window:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/recover_nnunet_artifacts.ps1 `
-  -PythonExe 'E:\0. IMP\.venv-win\Scripts\python.exe' `
-  -VhdPath 'E:\WSL\Ubuntu-E\ext4.vhdx' `
-  -ReportPath 'E:\0. IMP\.artifacts\preprocessing_search\current_bdou_loop192_nnunet_clean_v3_report.json' `
-  -OutputRoot 'E:\0. IMP\.worktrees\dual-live-demo\demo_runtime\nnunet\recovered'
+  -PythonExe '<PYTHON_EXE>' `
+  -VhdPath '<VHD_PATH>' `
+  -ReportPath '<REPORT_PATH>' `
+  -OutputRoot '<OUTPUT_ROOT>'
 ```
 
 Expected: `recovery=passed`, the three pinned hashes match, source VHD length/timestamps unchanged, VHD detached.
@@ -413,7 +413,7 @@ def test_client_accepts_only_exact_sidecar_origin(url: str) -> None:
 @pytest.mark.parametrize(
     ("response", "failure"),
     [
-        (TimeoutError("C:/private/model"), "timeout"),
+        (TimeoutError("<PRIVATE_MODEL>"), "timeout"),
         (FakeResponse(200, b"not-json"), "malformed_response"),
         (FakeResponse(200, json.dumps(response_with_wrong_mask_hash()).encode()), "binding_mismatch"),
     ],
@@ -615,7 +615,9 @@ git commit -m "feat: make dual-live comparison primary"
 - Modify: `tests/demo/test_launch_scripts.py`
 
 **Interfaces:**
-- `run_sidecar.ps1 -CheckOnly` validates Docker, GPU, hashes, binding, and `/health`.
+- `run_sidecar.ps1 -CheckOnly -PreserveMode -RunId $RunId` validates Docker,
+  GPU, hashes, binding, and `/health`, then retains the exact stopped evidence
+  container under a fresh launcher-generated owner-bound name.
 - `run_demo.ps1 -CheckOnly` requires sidecar health and performs one full dual smoke inference.
 - `stop_demo.ps1` stops launcher-owned resources and proves ports 7860/7862 closed.
 
@@ -646,7 +648,13 @@ Expected: FAIL on missing sidecar launcher and dual preflight.
 
 - [ ] **Step 3: Implement sidecar launcher**
 
-Verify artifact receipt and Docker image identity before `docker run`. Use fixed container name `imp-nnunet-loop192`, `--rm`, `--gpus device=0`, `--publish 127.0.0.1:7862:7862`, read-only model mount, `--read-only`, `--tmpfs /tmp:rw,noexec,nosuid,size=256m`, memory limit, and restart policy `no`. Poll `/health` for at most 120 seconds; stop container on timeout.
+Verify artifact receipt and Docker image identity before `docker run`. Preserve
+mode uses a fresh launcher-generated owner-bound container name and never
+`--rm`; check-only retains the exact stopped container and journals. Use
+`--gpus device=0`, `--publish 127.0.0.1:7862:7862`, read-only model mount,
+`--read-only`, `--tmpfs /tmp:rw,noexec,nosuid,size=256m`, memory limit, and
+restart policy `no`. Poll `/health` for at most 120 seconds; stop only the exact
+owned container on timeout.
 
 - [ ] **Step 4: Extend Gradio launcher preflight**
 
@@ -736,7 +744,7 @@ Expected: full repository suite PASS; record count and elapsed time.
 
 - [ ] **Step 2: Run hash and CUDA preflight**
 
-Run: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/run_sidecar.ps1 -CheckOnly`
+Run: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/run_sidecar.ps1 -CheckOnly -PreserveMode -RunId $RunId`
 
 Expected: artifact hashes pass; Docker GPU visible; sidecar health identity matches Loop192.
 

@@ -6,12 +6,21 @@ import argparse
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from lesion_robustness.evidence_registry import validate_registry
+from lesion_robustness.release_manifest import paper_projection
+try:
+    from scripts.paper.build_clean_v3_tables import paper_input_sha256
+except ModuleNotFoundError as exc:
+    if exc.name != "scripts":
+        raise
+    from build_clean_v3_tables import paper_input_sha256
 
 
 _CITATION = re.compile(
@@ -36,7 +45,7 @@ _PROTOCOL = re.compile(r"seed|group|resample|corruption", re.IGNORECASE)
 _INCLUDE_GRAPHICS = re.compile(
     r"\\includegraphics(?:\s*\[[^]]*\])?\s*\{([^}]+)\}"
 )
-_TABLE_INPUT = re.compile(r"\\input\s*\{(tables/[^}]+)\}")
+_TABLE_INPUT = re.compile(re.escape("\\") + r"input\s*\{(tables/[^}]+)\}")
 _UNFINISHED = re.compile(r"\b(?:TODO|TBD|FIXME|XXX)\b|\?\?")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _CLAIM_TERMS = re.compile(
@@ -48,10 +57,37 @@ _CLAIM_TERMS = re.compile(
     re.IGNORECASE,
 )
 _NEGATION = re.compile(
-    r"\b(?:no|not|never|without|unavailable|sealed|prevent(?:s|ed)?|"
+    r"\b(?:no|not|never|neither|without|unavailable|sealed|prevent(?:s|ed)?|"
     r"does not|do not|did not|cannot|is not|are not|has not|have not|rather than|"
     r"from being ranked)\b",
     re.IGNORECASE,
+)
+_LIVE_DEMO_MARKER = re.compile(
+    r"\blive(?:\s+dual)?\s+demo\b|\blive\s+comparison\b|"
+    r"\blive\s+(?:path|output|inference)\b",
+    re.IGNORECASE,
+)
+_LIVE_DEMO_BOUNDARY_TERM = re.compile(
+    r"\baccuracy\b|\bmetrics?\b|\b(?:robust[- ]?|clean[- ]?)?dice\b|"
+    r"\b(?:iou|precision|recall|hd95|assd|score|performance)\b|"
+    r"\bboundary[- ]?f1\b|\bground truth\b|\bequivalen(?:t|ce)\b|"
+    r"\breproduc(?:e|es|ed|ing)\b",
+    re.IGNORECASE,
+)
+_LIVE_NUMERIC_TERM = re.compile(
+    r"\baccuracy\b|\bmetrics?\b|\b(?:robust[- ]?|clean[- ]?)?dice\b|"
+    r"\b(?:iou|precision|recall|hd95|assd|score|performance)\b|"
+    r"\bboundary[- ]?f1\b",
+    re.IGNORECASE,
+)
+_EMPIRICAL_PAYLOAD = re.compile(r"[-+]?\d+\.\d+|\d+(?:\.\d+)?\s*%")
+_LIVE_CLAUSE_BOUNDARY = re.compile(
+    r"\s*(?:;|:|--|â€”|\bbut\b|\bhowever\b|\byet\b|\bwhereas\b|"
+    r"\bbecause\b|\btherefore\b|\bthus\b)\s*",
+    re.IGNORECASE,
+)
+_COMPARISON_LANE_RESET = re.compile(
+    r"^\s*(?:Paper RQ1|Fixed-cache demo)\b", re.IGNORECASE
 )
 
 
@@ -59,16 +95,18 @@ _NEGATION = re.compile(
 class AuditResult:
     errors: tuple[str, ...]
     registry_sha256: str | None
+    blockers: tuple[str, ...] = ()
     source_verification: str = "strict"
     missing_source_ids: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
 
     @property
     def passed(self) -> bool:
-        return not self.errors
+        return not self.errors and not self.blockers
 
     def receipt(self, paper: Path) -> dict[str, Any]:
         return {
+            "blockers": list(self.blockers),
             "errors": list(self.errors),
             "paper": paper.name,
             "passed": self.passed,
@@ -179,6 +217,31 @@ def _check_claims(path: Path, text: str, root: Path, errors: list[str]) -> None:
                 return
 
 
+def _check_live_demo_claims(text: str, errors: list[str]) -> None:
+    for paragraph in re.split(r"\n\s*\n", text):
+        live_scope = False
+        for sentence in _sentences(paragraph):
+            if _COMPARISON_LANE_RESET.match(sentence):
+                live_scope = False
+            elif _LIVE_DEMO_MARKER.search(sentence):
+                live_scope = True
+            if not live_scope:
+                continue
+            for clause in _LIVE_CLAUSE_BOUNDARY.split(sentence):
+                for match in _LIVE_DEMO_BOUNDARY_TERM.finditer(clause):
+                    prefix = clause[: match.start()]
+                    locally_negated = bool(
+                        re.search(r"\bnon[- ]?$", prefix, re.IGNORECASE)
+                    ) or _claim_is_negated(clause, match.start(), match.end())
+                    has_payload = bool(
+                        _LIVE_NUMERIC_TERM.fullmatch(match.group(0))
+                        and _EMPIRICAL_PAYLOAD.search(clause[match.end() :])
+                    )
+                    if not locally_negated or has_payload:
+                        errors.append("unbounded live demo claim")
+                        return
+
+
 def _check_citations(
     tex_files: Iterable[Path], bib_text: str, root: Path, errors: list[str]
 ) -> None:
@@ -197,6 +260,7 @@ def _check_manifest(
     registry: dict[str, Any],
     root: Path,
     errors: list[str],
+    blockers: list[str],
 ) -> dict[str, Any] | None:
     path = paper / "artifact_manifest.json"
     if not path.is_file():
@@ -207,6 +271,10 @@ def _check_manifest(
     except (OSError, UnicodeError, json.JSONDecodeError):
         errors.append("invalid artifact manifest")
         return None
+    if manifest.get("release_manifest_sha256") != paper_projection()[
+        "release_manifest_sha256"
+    ]:
+        errors.append("release manifest projection mismatch")
     if manifest.get("evidence_registry_sha256") != registry.get("registry_sha256"):
         errors.append("missing evidence mapping")
     registry_path = manifest.get("evidence_registry_path")
@@ -224,17 +292,48 @@ def _check_manifest(
             if not isinstance(entry, dict):
                 errors.append(f"invalid {label} manifest entry")
                 continue
-            _check_declared_hashes(paper, entry, label, errors)
-    _check_paper_pdf(paper, manifest, errors)
+            _check_declared_hashes(paper, root, entry, label, errors)
+    _check_paper_pdf(paper, manifest, errors, blockers)
     return manifest
 
 
+def _is_trusted_regular_file(path: Path) -> bool:
+    try:
+        stat = path.lstat()
+    except OSError:
+        return False
+    reparse_point = getattr(stat, "st_file_attributes", 0) & 0x400
+    return path.is_absolute() and path.is_file() and not path.is_symlink() and not reparse_point
+
+
+def _trusted_pdfinfo_executable() -> Path:
+    override = os.environ.get("IMP_PDFINFO_EXE")
+    if override is not None:
+        candidate = Path(override)
+        if not _is_trusted_regular_file(candidate):
+            raise ValueError("trusted pdfinfo executable unavailable")
+        return candidate.resolve(strict=True)
+    candidate = (
+        Path(sys.executable).resolve().parent.parent
+        / "native"
+        / "poppler"
+        / "Library"
+        / "bin"
+        / "pdfinfo.exe"
+    )
+    if not _is_trusted_regular_file(candidate):
+        raise ValueError("trusted pdfinfo executable unavailable")
+    return candidate.resolve(strict=True)
+
+
 def _pdf_page_count(path: Path) -> int:
+    executable = _trusted_pdfinfo_executable()
     completed = subprocess.run(
         ["pdfinfo", str(path)],
         capture_output=True,
         text=True,
         check=False,
+        executable=str(executable),
     )
     if completed.returncode != 0:
         raise ValueError("pdfinfo failed")
@@ -245,7 +344,10 @@ def _pdf_page_count(path: Path) -> int:
 
 
 def _check_paper_pdf(
-    paper: Path, manifest: dict[str, Any], errors: list[str]
+    paper: Path,
+    manifest: dict[str, Any],
+    errors: list[str],
+    blockers: list[str],
 ) -> None:
     entry = manifest.get("paper_pdf")
     if not isinstance(entry, dict):
@@ -254,6 +356,11 @@ def _check_paper_pdf(
     relative = entry.get("path")
     expected_hash = entry.get("sha256")
     expected_pages = entry.get("pages")
+    status = entry.get("status")
+    built_release = entry.get("built_release_manifest_sha256")
+    declared_input = manifest.get("paper_input_sha256")
+    built_input = entry.get("built_paper_input_sha256")
+    current_release = paper_projection()["release_manifest_sha256"]
     if (
         relative != "main.pdf"
         or not isinstance(expected_hash, str)
@@ -262,6 +369,42 @@ def _check_paper_pdf(
     ):
         errors.append("missing paper PDF binding")
         return
+    input_binding_valid = (
+        isinstance(declared_input, str)
+        and _SHA256.fullmatch(declared_input) is not None
+        and isinstance(built_input, str)
+        and _SHA256.fullmatch(built_input) is not None
+    )
+    if not input_binding_valid:
+        errors.append("invalid paper input binding")
+    else:
+        try:
+            if declared_input != paper_input_sha256(paper):
+                errors.append("paper input hash drift")
+        except OSError:
+            errors.append("paper input hash drift")
+    binding_valid = (
+        status in {"current", "stale_uncompiled"}
+        and isinstance(built_release, str)
+        and _SHA256.fullmatch(built_release) is not None
+        and (
+            (
+                status == "current"
+                and built_release == current_release
+                and input_binding_valid
+                and built_input == declared_input
+            )
+            or (
+                status == "stale_uncompiled"
+                and input_binding_valid
+                and built_input != declared_input
+            )
+        )
+    )
+    if not binding_valid:
+        errors.append("invalid paper PDF release binding")
+    elif status == "stale_uncompiled":
+        blockers.append("paper PDF is stale for current paper inputs")
     pdf = _resolve_contained(paper, relative)
     if pdf is None or pdf != (paper / "main.pdf").resolve() or not pdf.is_file():
         errors.append("missing paper PDF binding")
@@ -292,7 +435,11 @@ def _resolve_contained(base: Path, value: str) -> Path | None:
 
 
 def _check_declared_hashes(
-    paper: Path, entry: dict[str, Any], primary_label: str, errors: list[str]
+    paper: Path,
+    root: Path,
+    entry: dict[str, Any],
+    primary_label: str,
+    errors: list[str],
 ) -> None:
     pairs = [("path", "sha256", primary_label)]
     pairs.extend(
@@ -312,11 +459,12 @@ def _check_declared_hashes(
         if key.endswith("_sha256") and key not in semantic_hashes and key != "sha256"
     )
     for path_key, hash_key, label in dict.fromkeys(pairs):
-        _check_hashed_artifact(paper, entry, path_key, hash_key, label, errors)
+        _check_hashed_artifact(paper, root, entry, path_key, hash_key, label, errors)
 
 
 def _check_hashed_artifact(
     paper: Path,
+    root: Path,
     entry: dict[str, Any],
     path_key: str,
     hash_key: str,
@@ -328,7 +476,9 @@ def _check_hashed_artifact(
     if not isinstance(source, str) or not isinstance(expected, str):
         errors.append(f"missing {label} hash")
         return
-    artifact = _resolve_contained(paper, source)
+    normalized = source.replace("\\", "/")
+    base = root if normalized.startswith("scripts/") else paper
+    artifact = _resolve_contained(base, source)
     if artifact is None:
         errors.append("unsafe manifest path")
     elif not artifact.is_file():
@@ -506,7 +656,7 @@ def _identity_patterns(record: dict[str, Any]) -> set[str]:
             patterns.add(r"\b" + r"[- _\\]*".join(map(re.escape, words)) + r"\b")
     display = _normalized_phrase(record.get("display_name", ""))
     if display.startswith("imp segformer"):
-        patterns.add(r"\\impmodel\b")
+        patterns.add(re.escape("\\") + r"impmodel\b")
         patterns.add(r"\b(?:preprocessing[- ]aware\s+)?mit[- ]?b3\s+u[- ]?net\s+control\b")
     return patterns
 
@@ -732,100 +882,66 @@ def _check_result_numbers(
                     )
 
 
-def _check_demo_receipts(
+def _check_demo_public_summary(
     paper: Path, registry: dict[str, Any], errors: list[str]
 ) -> None:
-    receipt = paper / "figures" / "qualitative_demo_receipts.json"
-    if not receipt.is_file():
+    summary = paper / "figures" / "qualitative_demo_receipts.json"
+    if not summary.is_file():
         return
     try:
-        payload = json.loads(receipt.read_text(encoding="ascii"))
+        payload = json.loads(summary.read_text(encoding="ascii"))
     except (OSError, UnicodeError, json.JSONDecodeError):
-        errors.append("invalid demo receipt bundle")
+        errors.append("invalid demo public summary")
         return
+    required_keys = {
+        "aggregate_mask_bindings_sha256",
+        "artifact_role",
+        "authorized_sample_count",
+        "evidence_class",
+        "evidence_registry_sha256",
+        "external_runtime_bundle_sha256",
+        "panel_caption",
+        "provenance_manifest_sha256",
+        "release_manifest_sha256",
+        "schema_version",
+        "source_record_count",
+    }
+    if not isinstance(payload, dict) or set(payload) != required_keys:
+        errors.append("invalid demo public summary")
+        if not isinstance(payload, dict) or not _SHA256.fullmatch(
+            str(payload.get("aggregate_mask_bindings_sha256", ""))
+        ):
+            errors.append("unbound demo mask authorization")
+        return
+    if (
+        payload.get("schema_version")
+        != "loop206.qualitative_public_summary.v1"
+        or payload.get("artifact_role")
+        != "derived_public_aggregate_provenance"
+        or payload.get("evidence_class")
+        != "train_screen / exact_fixed_cache / historical_cache_provenance_drift"
+        or payload.get("panel_caption")
+        != "illustrative; not protected-test evidence"
+    ):
+        errors.append("invalid demo public summary")
     if payload.get("evidence_registry_sha256") != registry.get("registry_sha256"):
         errors.append("demo registry hash drift")
-    entries = payload.get("receipts")
-    if not isinstance(entries, list):
-        errors.append("invalid demo receipt bundle")
-        return
-    bundle_authorization = payload.get("display_authorization")
-    required_hash_binding = (
-        "sha256_raw+sha256_rgb+mask_sha256_raw+mask_sha256_binary"
+    digest_keys = (
+        "aggregate_mask_bindings_sha256",
+        "evidence_registry_sha256",
+        "external_runtime_bundle_sha256",
+        "provenance_manifest_sha256",
+        "release_manifest_sha256",
     )
-    if (
-        not isinstance(bundle_authorization, dict)
-        or bundle_authorization.get("hash_binding") != required_hash_binding
-        or not _SHA256.fullmatch(
-            str(bundle_authorization.get("mask_bindings_sha256", ""))
-        )
+    if any(
+        not _SHA256.fullmatch(str(payload.get(key, ""))) for key in digest_keys
     ):
         errors.append("unbound demo mask authorization")
-    authorized_count = (
-        bundle_authorization.get("authorized_sample_count")
-        if isinstance(bundle_authorization, dict)
-        else None
-    )
-    if authorized_count != 3 or len(entries) != authorized_count:
+    if (
+        payload.get("authorized_sample_count") != 3
+        or payload.get("source_record_count") != 3
+    ):
         errors.append("demo authorization count mismatch")
-    mask_bindings: list[dict[str, str]] = []
-    for entry in entries:
-        if not isinstance(entry, dict):
-            errors.append("invalid demo receipt bundle")
-            continue
-        metrics = entry.get("metrics")
-        if not isinstance(metrics, dict) or any(
-            not isinstance(metrics.get(arm), dict) for arm in ("control", "candidate")
-        ):
-            errors.append("missing demo metrics")
-        authorization = entry.get("display_authorization")
-        if (
-            not isinstance(authorization, dict)
-            or authorization.get("mask_variant") != "challenge_ground_truth"
-            or authorization != bundle_authorization
-        ):
-            errors.append("hidden no-GT metrics")
-        binding = entry.get("ground_truth_binding")
-        required_mask_fields = (
-            "mask_sha256_raw",
-            "mask_sha256_binary",
-            "mask_sha256_runtime",
-        )
-        if not isinstance(binding, dict) or any(
-            not _SHA256.fullmatch(str(binding.get(field, "")))
-            for field in required_mask_fields
-        ):
-            errors.append("unbound demo ground truth")
-            continue
-        sample = entry.get("sample")
-        if not isinstance(sample, dict):
-            errors.append("unbound demo ground truth")
-            continue
-        mask_bindings.append(
-            {
-                "group_key": str(sample.get("group_key", "")),
-                "sample_id": str(sample.get("sample_id", "")),
-                "mask_sha256_raw": str(binding["mask_sha256_raw"]),
-                "mask_sha256_binary": str(binding["mask_sha256_binary"]),
-            }
-        )
-    if len(mask_bindings) != len(entries):
-        errors.append("unbound demo mask authorization")
-    elif isinstance(bundle_authorization, dict):
-        encoded = json.dumps(
-            sorted(
-                mask_bindings,
-                key=lambda row: (row["sample_id"], row["group_key"]),
-            ),
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=True,
-            allow_nan=False,
-        ).encode("ascii")
-        if bundle_authorization.get("mask_bindings_sha256") != hashlib.sha256(
-            encoded
-        ).hexdigest():
-            errors.append("unbound demo mask authorization")
 
 
 def _normalized_tex_path(value: str, suffix: str) -> str:
@@ -871,6 +987,7 @@ def audit_paper(
     registry_path = Path(registry).resolve()
     root = paper_path.parents[1] if len(paper_path.parents) > 1 else paper_path.parent
     errors: list[str] = []
+    blockers: list[str] = []
     registry_payload: dict[str, Any] | None = None
     missing_source_ids: tuple[str, ...] = ()
     try:
@@ -893,11 +1010,15 @@ def audit_paper(
             errors.append(f"unfinished marker: {_relative(path, root)}")
         if path.suffix.lower() == ".tex" or path == readme:
             _check_claims(path, text, root, errors)
+        if path.suffix.lower() == ".tex":
+            _check_live_demo_claims(text, errors)
     bib_text = "\n".join(text for path, text in texts if path.suffix.lower() == ".bib")
     _check_citations(tex_files, bib_text, root, errors)
 
     if registry_payload is not None:
-        manifest = _check_manifest(paper_path, registry_payload, root, errors)
+        manifest = _check_manifest(
+            paper_path, registry_payload, root, errors, blockers
+        )
         if manifest is not None:
             _check_manifest_references(manifest, tex_files, errors)
         missing_source_ids = _check_source_hashes(
@@ -905,7 +1026,7 @@ def audit_paper(
         )
         _check_loop170_labels(tex_files, root, errors)
         _check_result_numbers(tex_files, registry_payload, root, errors)
-        _check_demo_receipts(paper_path, registry_payload, errors)
+        _check_demo_public_summary(paper_path, registry_payload, errors)
         registry_sha256 = str(registry_payload.get("registry_sha256"))
     else:
         registry_sha256 = None
@@ -917,6 +1038,7 @@ def audit_paper(
     return AuditResult(
         tuple(dict.fromkeys(errors)),
         registry_sha256,
+        tuple(dict.fromkeys(blockers)),
         source_verification,
         missing_source_ids,
         warnings,
@@ -951,6 +1073,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     print(
         f"passed={str(result.passed).lower()} errors={len(result.errors)} "
+        f"blockers={len(result.blockers)} "
         f"source_verification={result.source_verification} "
         f"missing_sources={len(result.missing_source_ids)}"
     )

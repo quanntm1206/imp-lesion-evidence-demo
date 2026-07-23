@@ -1,0 +1,47 @@
+schema_version: imp.rq1_v2.config.v1
+arm: nnunet
+model_id: RQ1v2-nnUNet-v2-2d
+run_id: nnunet_seed206
+seed: 206
+conditions: [clean, low_brightness, low_contrast, gaussian_noise, gaussian_blur, jpeg_compression]
+geometry:
+  input_hw: [384, 384]
+  probability_restore: bilinear_to_original_before_threshold
+  metric_geometry: original_image
+  threshold: 0.5
+metric_contract:
+  source: src/lesion_robustness/research/rq1_metrics.py
+  source_sha256: 8f0dcaec8a2b7768450955c36b656ccbaa55022b06619d78cbec649790cf1d06
+  metrics: [dice, iou, precision, recall, boundary_f1, hd95, assd]
+  boundary_tolerance_original_pixels: 2
+  empty_mask_policy: both_empty_perfect;one_empty_diagonal_penalty
+training:
+  configuration: 2d
+  trainer: nnUNetTrainer_100epochs
+  fold: 0
+  epochs: 100
+  batch_size: 2
+  optimizer: nnunet_default
+  learning_rate: nnunet_default
+  weight_decay: nnunet_default
+  scheduler: nnunet_default
+  loss: nnUNetTrainer_100epochs_default_v2_8_1
+  augmentation: nnUNetTrainer_100epochs_default_v2_8_1
+  initialization: nnUNetTrainer_100epochs_default_v2_8_1
+  num_workers: 0
+  amp: true
+  checkpoint_selection: final_epoch_only
+  deterministic: true
+private_inputs:
+  dataset_index_env: IMP_CLEAN_V3_INDEX
+  experiment_manifest_env: IMP_RQ1_V2_EXPERIMENT_INPUT
+  training_input_env: IMP_RQ1_V2_NNUNET_INITIALIZATION
+  training_input_artifact_key: plans_sha256
+output:
+  checkpoint_env: IMP_RQ1_V2_OUTPUT_ROOT
+  checkpoint_template: "{run_id}/final.pt"
+  checkpoint_selection: final_epoch_only
+budget:
+  max_wall_hours: 24
+  max_checkpoint_bytes: 2147483648
+  max_job_storage_bytes: 25000000000

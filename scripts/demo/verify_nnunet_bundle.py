@@ -12,6 +12,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+from lesion_robustness.release_manifest import launcher_projection
+
 
 REQUIRED = {
     "checkpoint_final.pth": ("checkpoint_sha256", "checkpoint"),
@@ -24,12 +26,13 @@ METADATA = (
     "runtime_identity.json",
     "requirements.lock",
 )
-MODEL_ID = "L192-nnUNet-v2-raw-100ep"
+_LAUNCHER = launcher_projection()
+MODEL_ID = str(_LAUNCHER["nnunet"]["model_id"])
 PINNED_HASHES = MappingProxyType(
     {
-        "checkpoint_sha256": "3814716033afd464dacc573f92a5a44ff20eb7f2163d99b4f16ecff8aa278ea2",
-        "plans_sha256": "b60e4defd229b03f7064dc5b66123545c91cdaa44c09d990b86690a94e1e08a7",
-        "fingerprint_sha256": "931da8aae52ffecd726d5928009ebdcae7002e24b035fad89177e0bc81dba85c",
+        "checkpoint_sha256": str(_LAUNCHER["nnunet"]["checkpoint_sha256"]),
+        "plans_sha256": str(_LAUNCHER["sidecar"]["plans_sha256"]),
+        "fingerprint_sha256": str(_LAUNCHER["sidecar"]["fingerprint_sha256"]),
     }
 )
 VHD_PROOF_FIELDS = ("length", "creation_time_utc", "last_write_time_utc")

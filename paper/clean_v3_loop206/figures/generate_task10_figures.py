@@ -14,6 +14,7 @@ import numpy as np
 
 from lesion_robustness.demo.immutable_io import ImmutableSnapshot
 from lesion_robustness.evidence_registry import validate_registry
+from lesion_robustness.release_manifest import DEFAULT_MANIFEST
 
 
 PANEL_CAPTION = "illustrative; not protected-test evidence"
@@ -392,6 +393,8 @@ def caption_all_modality_panels(axes: np.ndarray) -> int:
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = _parser().parse_args(argv)
+    release_snapshot = ImmutableSnapshot.from_bytes(DEFAULT_MANIFEST.read_bytes())
+    release_digest = release_snapshot.sha256
     args.output_dir.mkdir(parents=True, exist_ok=True)
     _style()
     evidence = load_loop206_delta_evidence(args.evidence_registry)
@@ -405,24 +408,36 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     _build_delta(evidence, args.output_dir / "loop206_delta.pdf")
     _build_qualitative(arrays, receipts, args.output_dir / "qualitative_demo.pdf")
+    public_summary_text = json.dumps(
+        {
+            "schema_version": "loop206.qualitative_public_summary.v1",
+            "artifact_role": "derived_public_aggregate_provenance",
+            "panel_caption": PANEL_CAPTION,
+            "evidence_class": "train_screen / exact_fixed_cache / historical_cache_provenance_drift",
+            "authorized_sample_count": display_authorization[
+                "authorized_sample_count"
+            ],
+            "source_record_count": len(receipts),
+            "evidence_registry_sha256": evidence.registry_sha256,
+            "release_manifest_sha256": release_digest,
+            "external_runtime_bundle_sha256": bundle_sha256,
+            "provenance_manifest_sha256": display_authorization[
+                "provenance_manifest_sha256"
+            ],
+            "aggregate_mask_bindings_sha256": display_authorization[
+                "mask_bindings_sha256"
+            ],
+        },
+        indent=2,
+        sort_keys=True,
+        ensure_ascii=True,
+        allow_nan=False,
+    )
+    current_release = ImmutableSnapshot.from_bytes(DEFAULT_MANIFEST.read_bytes())
+    if current_release.sha256 != release_digest:
+        raise ValueError("release manifest rotated during generation")
     (args.output_dir / "qualitative_demo_receipts.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "loop206.qualitative_receipts.v1",
-                "selection_rule": "first, middle, last after sorting all 76 train-screen rows by sample_id and group_key",
-                "panel_caption": PANEL_CAPTION,
-                "evidence_registry_sha256": evidence.registry_sha256,
-                "runtime_bundle_sha256": bundle_sha256,
-                "display_authorization": display_authorization,
-                "receipts": receipts,
-            },
-            indent=2,
-            sort_keys=True,
-            ensure_ascii=True,
-            allow_nan=False,
-        )
-        + "\n",
-        encoding="ascii",
+        public_summary_text + "\n", encoding="ascii"
     )
 
 

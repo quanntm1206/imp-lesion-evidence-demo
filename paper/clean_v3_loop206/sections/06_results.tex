@@ -12,6 +12,8 @@ The result also does not authorize test-v3 access under the historical combined 
 
 \input{tables/loop206_ablation}
 
+\input{tables/loop206_gate_audit}
+
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{figures/loop206_delta.pdf}
@@ -19,9 +21,9 @@ The result also does not authorize test-v3 access under the historical combined 
 \label{fig:loop206-delta}
 \end{figure}
 
-After averaging the three selected seeds and three views, the contour channel changes robust Dice by $-0.0313$. Its conditional 95\% split-group bootstrap interval, $[-0.0491,-0.0156]$, lies entirely below zero. Per-seed directions are mixed---one slightly positive and two negative---so the aggregate statement must not be read as a reduction in every seed. On this 76-group train-screen protocol, the aggregate result is sufficient to fail the preregistered primary gate; it does not establish a broader claim about contour methods or seed-population uncertainty. Boundary F1 changes by $-0.0147$; its interval $[-0.0308,0.0010]$ includes zero, providing no evidence of the intended boundary benefit. Precision and recall also decline in the recorded aggregate, while HD95 and ASSD increase. No arm produces an empty prediction.
+After averaging the three selected seeds and three views, the contour channel changes robust Dice by $-0.0313$. Its conditional 95\% split-group bootstrap interval, $[-0.0491,-0.0156]$, lies entirely below zero. Per-seed directions are unavailable in the authorized closure receipt, so the aggregate statement must not be read as a reduction in every seed. On this 76-group train-screen protocol, the aggregate result contradicts the stated positive primary-effect requirement; it does not establish a broader claim about contour methods or seed-population uncertainty. Boundary F1 changes by $-0.0147$; its interval $[-0.0308,0.0010]$ includes zero, providing no evidence of the intended boundary benefit. Precision and recall also decline in the recorded aggregate, while HD95 and ASSD increase.
 
-The candidate fails the primary-improvement, Dice non-inferiority, boundary non-inferiority, clean-Dice, precision, recall, distance, and per-corruption gates. Clean-v3 validation, test-v3, and PH2 remain sealed. The operational default and scientific reference are unchanged.
+The authorized closure receipt records only the global decision \texttt{gate\_passed=false}, establishing that at least one preregistered gate did not pass; it does not enumerate individual gate decisions. Table~\ref{tab:loop206-gate-audit} exposes the fixed eight-gate contract without reconstructing those decisions. Every interval is conditional on the selected seeds. Thresholds, per-seed directions, and unreported endpoints are \texttt{unavailable}, so every individual gate status remains \texttt{blocked}. Clean-v3 validation, test-v3, and PH2 remain sealed. The operational default and scientific reference are unchanged.
 
 \subsection{Fixed-cache qualitative demonstration}
 
@@ -33,6 +35,12 @@ Figure~\ref{fig:qualitative-demo} shows three clean, non-protected examples sele
 \caption{Three deterministic, non-protected fixed-cache comparisons. Columns show the original image, control mask, candidate mask, disagreement overlay, and authorized train-screen ground truth. Rust marks control-only pixels and teal marks candidate-only pixels. Each of the 15 modality subplots visibly carries the exact notice \texttt{illustrative; not protected-test evidence}.}
 \label{fig:qualitative-demo}
 \end{figure*}
+
+\subsection{Bounded live dual demonstration}
+
+Live L206-control-s206 versus a reconstructed Loop192 runtime is an illustrative, metric-free display; it does not reproduce the Loop191-versus-Loop192 Paper RQ1 comparison. In shorthand, it does not reproduce the Loop191-versus-Loop192 RQ1 comparison. The runtime is identified as L192-nnUNet-v2-raw-100ep. The service sequences independent copies of the same public or synthetic RGB input through L206 first and reconstructed L192 second; this execution order does not make either model an input to the other. A receipt is eligible only after both arms succeed and bind their model, checkpoint, input, and mask hashes. No canonical live runtime receipt is included at this stage. Ground truth is not loaded or used. Accuracy is not measured or claimed. The Live dual demo reports no metric for this live path. Its masks are illustrative.
+
+\paragraph{Evidence classification.} Observed: the historical Task 4 resume report records bounded loopback sidecar/Gradio inference, fail-closed oversized input, retry/recovery, desktop 1440x900 and mobile 390x844 browser checks, and an ephemeral Cloudflare public GET. That historical report is not current-release acceptance evidence. Current-release browser, mobile/desktop visual, and tunnel status is \texttt{unverified/blocked}: the canonical blocked packet at \texttt{demo\_runtime/acceptance/imp.dual\_live.e2e.v1/20260722T233947051Z/acceptance.json} omits browser/tunnel fields, and the Presenter S transcript records browser discovery failure. Established: historical operational observations support only their stated checks; they do not support ground-truth accuracy or original-runtime equivalence. Assumption: no live receipt is promoted into the release, so the live lane remains separate from fixed-cache and Paper RQ1 evidence. Speculation: no causal, clinical, or superiority property follows from illustrative live masks. The historical Task 4 report recorded an 83-mask-pixel reconstructed-runtime repeat drift under matched bindings; that bounded historical observation is not current-release determinism acceptance, which remains blocked.
 
 \subsection{Legacy comparison}
 

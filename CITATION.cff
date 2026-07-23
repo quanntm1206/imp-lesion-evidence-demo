@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: >-
+  If you use this research scaffold, cite the software record below and the
+  accompanying evidence-bounded report.
+title: Evidence-Bounded Comparison of MiT-B3 U-Net and nnU-Net for Skin Lesion Segmentation
+type: software
+version: 0.1.0
+authors:
+  - family-names: Nguyễn Trần
+    given-names: Minh Quân
+  - family-names: Nguyễn
+    given-names: Đức Lân
+repository-code: https://github.com/quanntm1206/imp-lesion-evidence-demo
+abstract: >-
+  A reproducibility scaffold, evidence registry, manuscript, and non-clinical
+  demonstration for a bounded comparison of an IMP MiT-B3 U-Net system and
+  nnU-Net. Historical results and reconstructed live inference are kept
+  separate from the pending prospective RQ1-v2 experiment.
+keywords:
+  - skin lesion segmentation
+  - dermoscopy
+  - MiT-B3
+  - U-Net
+  - nnU-Net
+  - reproducibility
+preferred-citation:
+  type: article
+  title: Evidence-Bounded Comparison of MiT-B3 U-Net and nnU-Net for Skin Lesion Segmentation
+  authors:
+    - family-names: Nguyễn Trần
+      given-names: Minh Quân
+    - family-names: Nguyễn
+      given-names: Đức Lân
+  year: 2026

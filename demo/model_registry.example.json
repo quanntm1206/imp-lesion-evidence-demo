@@ -1,16 +1,23 @@
 {
-  "schema_version": "loop206.demo.models.v1",
-  "control": {
-    "model_id": "L206-control-s206",
-    "checkpoint_env": "IMP_LOOP206_CONTROL_CHECKPOINT",
-    "checkpoint_sha256": "be606b0a0940839b019ea60117dda4b27f9b8f04d54306b5b676f2c29516fcef"
-  },
   "candidate": {
-    "model_id": "L206-contour-channel-s206",
     "checkpoint_env": "IMP_LOOP206_CANDIDATE_CHECKPOINT",
-    "checkpoint_sha256": "afb86b2a5161189369dbc3c985e78f214c305470661048c6643726612f57638b"
+    "checkpoint_sha256": "afb86b2a5161189369dbc3c985e78f214c305470661048c6643726612f57638b",
+    "display_name": "Loop206 contour channel",
+    "evidence": "train_screen",
+    "model_id": "L206-contour-channel-s206",
+    "verification_status": "unverified_external"
+  },
+  "control": {
+    "checkpoint_env": "IMP_LOOP206_CONTROL_CHECKPOINT",
+    "checkpoint_sha256": "be606b0a0940839b019ea60117dda4b27f9b8f04d54306b5b676f2c29516fcef",
+    "display_name": "Loop206 zero-channel control",
+    "evidence": "train_screen",
+    "model_id": "L206-control-s206",
+    "verification_status": "unverified_external"
   },
   "prior_env": "IMP_LOOP206_PRIOR",
   "prior_receipt_env": "IMP_LOOP206_PRIOR_RECEIPT",
-  "prior_receipt_sha256": null
+  "prior_receipt_sha256": null,
+  "release_manifest_sha256": "435606d5adc296be57405c65a9c725af3dff96c15f9aabf7ac0924d06387a264",
+  "schema_version": "loop206.demo.models.v1"
 }

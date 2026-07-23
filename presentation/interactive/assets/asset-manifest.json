@@ -19,6 +19,15 @@
                        "output_sha256":  "899cbaadc4ceef55d9be68331a254c3225b042071b1e36197ce80db19aadd771",
                        "bytes":  325305,
                        "dpi":  120
+                   },
+                   {
+                       "name":  "qualitative-demo-middle",
+                       "source":  "presentation/interactive/assets/qualitative-demo.png",
+                       "source_sha256":  "899cbaadc4ceef55d9be68331a254c3225b042071b1e36197ce80db19aadd771",
+                       "output":  "presentation/interactive/assets/qualitative-demo-middle.png",
+                       "output_sha256":  "91ceb12c268f21b3f1bca5756b91c00a12f49f3bafd1796451a5ec3eb201c847",
+                       "bytes":  104312,
+                       "dpi":  120
                    }
                ]
 }

@@ -2,21 +2,33 @@
   "evidence_registry_path": "demo/data/evidence_registry.json",
   "evidence_registry_sha256": "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32",
   "schema_version": "imp.paper_artifacts.v1",
+  "release_manifest_sha256": "435606d5adc296be57405c65a9c725af3dff96c15f9aabf7ac0924d06387a264",
   "paper_pdf": {
     "path": "main.pdf",
-    "sha256": "f4379e80e4d9c45884475475bdb549ebf661aff5c7c53acafcc708724eb4d36d",
-    "pages": 13,
-    "bytes": 1467800
+    "sha256": "e48fdf3526c3c8514c88185357a7ec3b67a570ec988519340c2e15ad9ca93e72",
+    "pages": 14,
+    "bytes": 1361044,
+    "status": "current",
+    "built_release_manifest_sha256": "435606d5adc296be57405c65a9c725af3dff96c15f9aabf7ac0924d06387a264",
+    "built_paper_input_sha256": "1e50432ed53f0769adcf55f3bb838764dafdf5f83d805d696286d25fa1064adb",
+    "inspection": {
+      "pdfinfo": "passed",
+      "visual_review": "passed"
+    }
   },
   "figures": {
     "evidence_pipeline": {
       "path": "figures/evidence_pipeline.pdf",
-      "sha256": "3355763ef8579481827f1767c1c9e219367dc36deea547e75072ad4c7e567205",
+      "sha256": "6ce9189e6118bde22156ba8786d86df08b990dbe945c9e5d2a8be12d76322dd0",
       "editable_source_path": "figures/evidence_pipeline.drawio",
-      "editable_source_sha256": "630692a54e6b83fb0254f8f6a42240585196b6844bbd36a9725fbf0cd7540398",
-      "caption": "Evidence-bound experimental and demonstration pipeline; protocol and claim-scope mapping only, not performance evidence.",
+      "editable_source_sha256": "7de48f511369fd08a09d26dee781eddff1b94357dd155047c98f6ef5932f87ab",
+      "generation_source_path": "scripts/paper/generate_evidence_pipeline.py",
+      "generation_source_sha256": "03ad60e8ae3973713af71bb03cfb3572f5a2b3ce7d2bfb234b504d91ad70d19c",
+      "visual_review_packet_path": "figures/evidence_pipeline.visual-review.json",
+      "visual_review_packet_sha256": "0bbaae5c320f8ab94acaef5c386bbba74d77878fbdc30db3071589257c9733e6",
+      "caption": "Evidence-bound Paper RQ1, fixed-cache demo, and live dual-demo lanes; protocol and claim-scope mapping only, not performance evidence.",
       "label": "fig:evidence-pipeline",
-      "supported_claim": "The registry, controlled comparisons, demo modes, and claim gates remain separated by evidence scope.",
+      "supported_claim": "Paper RQ1, fixed-cache evidence, and conditional live dual-demo outputs have distinct model identities, evidence scopes, and claim gates.",
       "evidence_class": [
         "protected_validation",
         "train_screen",
@@ -24,11 +36,14 @@
         "sealed_protected_test",
         "illustrative_demo"
       ],
-      "generation_command": "draw.io --export --format pdf --crop --output figures/evidence_pipeline.pdf figures/evidence_pipeline.drawio",
+      "generation_command": "python scripts/paper/generate_evidence_pipeline.py --source paper/clean_v3_loop206/figures/evidence_pipeline.drawio --output paper/clean_v3_loop206/figures/evidence_pipeline.pdf",
       "validation": {
         "drawio_xml": "passed",
         "visual_review": "passed",
-        "renderable": "passed"
+        "renderable": "passed",
+        "vector_content": "passed_no_raster_images",
+        "renderer": "tracked_reportlab_fallback_drawio_cli_unavailable",
+        "latex_width_min_label_pt": 8.16
       }
     },
     "loop206_delta": {
@@ -36,11 +51,11 @@
       "sha256": "4252809c43242f38c910eb39b20bb1442813b6da80a64b53dfb827bed63d543e",
       "caption": "Loop206 candidate-minus-control Dice and boundary-F1 deltas with 95% split-group bootstrap confidence intervals conditional on selected seeds and a zero reference line.",
       "label": "fig:loop206-delta",
-      "supported_claim": "After averaging the selected seeds and views on the 76-group train-screen protocol, the robust-Dice delta was negative and boundary F1 did not show the intended improvement; seed-level directions were mixed.",
+      "supported_claim": "After averaging the selected seeds and views on the 76-group train-screen protocol, the robust-Dice delta was negative and boundary F1 did not show the intended improvement; per-seed directions are unavailable in the authorized paper evidence.",
       "evidence_class": "train_screen",
       "generation_command": "python figures/generate_task10_figures.py --evidence-registry <EVIDENCE_REGISTRY> --receipt-bundle <AUTHORIZED_RECEIPT_BUNDLE> --expected-receipt-bundle-sha256 c5ff2157221f117349b7bb72610bd3da8afa99699ca708bf426f6bfa056d108e --output-dir figures",
       "generation_source_path": "figures/generate_task10_figures.py",
-      "generation_source_sha256": "76556b770760a50c62d680ab0d7b2100764c8474f64aba8e2967a183f31dd2cc",
+      "generation_source_sha256": "b67717b34f61f63711c3c1dedd5cceebd8f08321b050d22681bb15c15c0569f7",
       "evidence_registry_sha256": "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32",
       "validation": {
         "values_against_registry": "passed",
@@ -61,12 +76,11 @@
         "python figures/generate_task10_figures.py --evidence-registry <EVIDENCE_REGISTRY> --receipt-bundle <AUTHORIZED_RECEIPT_BUNDLE> --expected-receipt-bundle-sha256 c5ff2157221f117349b7bb72610bd3da8afa99699ca708bf426f6bfa056d108e --output-dir figures"
       ],
       "generation_source_path": "figures/generate_task10_figures.py",
-      "generation_source_sha256": "76556b770760a50c62d680ab0d7b2100764c8474f64aba8e2967a183f31dd2cc",
+      "generation_source_sha256": "b67717b34f61f63711c3c1dedd5cceebd8f08321b050d22681bb15c15c0569f7",
       "capture_source_path": "figures/capture_qualitative_demo.py",
       "capture_source_sha256": "6dbbc7b6101b6cc1f3780b704c4e33389b1a9a6bc576e3554e1670c255f10e77",
-      "receipt_path": "figures/qualitative_demo_receipts.json",
-      "receipt_sha256": "9d5623a6ec8759212bea5ea8190b124ce030073c59e5c37697f8cc596fc93991",
-      "provenance_receipt_sha256": "9d5623a6ec8759212bea5ea8190b124ce030073c59e5c37697f8cc596fc93991",
+      "public_summary_path": "figures/qualitative_demo_receipts.json",
+      "public_summary_sha256": "32ee2aa471c2eeb99062daa4c8e26f6f054df0b450648a05a07f5aef04197988",
       "external_runtime_bundle_sha256": "c5ff2157221f117349b7bb72610bd3da8afa99699ca708bf426f6bfa056d108e",
       "provenance_manifest_sha256": "4e86d251231bc105167910c6b5a41fc29900dff41342405657a5c2eccb67b102",
       "evidence_registry_sha256": "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32",
@@ -81,8 +95,9 @@
       },
       "selection_rule": "first, middle, last after sorting all 76 train-screen rows by sample_id and group_key",
       "validation": {
-        "real_gpu_receipts": "passed_3_of_3",
-        "ground_truth_authorization": "passed_3_of_3",
+        "external_gpu_source_records": "passed_3_of_3_before_public_derivation",
+        "ground_truth_authorization": "passed_aggregate_binding",
+        "public_summary_privacy": "passed_aggregate_only",
         "visual_review": "passed",
         "renderable": "passed"
       }
@@ -104,6 +119,11 @@
     "loop206_ablation": {
       "path": "tables/loop206_ablation.tex",
       "sha256": "83ecad55a600b6ec3f288c7e36437ad426948632aca4a6e0abc09a48c7d3b831"
+    },
+    "loop206_gate_audit": {
+      "path": "tables/loop206_gate_audit.tex",
+      "sha256": "db55346d0b15dd04890fceb379da557c6325783b4b70513a87b83e81bf31937b"
     }
-  }
+  },
+  "paper_input_sha256": "1e50432ed53f0769adcf55f3bb838764dafdf5f83d805d696286d25fa1064adb"
 }

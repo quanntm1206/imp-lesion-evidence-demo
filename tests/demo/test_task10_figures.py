@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from lesion_robustness.demo.immutable_io import ImmutableSnapshot
+from lesion_robustness.release_manifest import DEFAULT_MANIFEST, sha256_file
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -45,6 +46,7 @@ capture = _load_module("task10_capture", FIGURES / "capture_qualitative_demo.py"
 def _registry_hash(payload: dict) -> str:
     unsigned = deepcopy(payload)
     unsigned.pop("registry_sha256", None)
+    unsigned.pop("release_manifest_sha256", None)
     encoded = json.dumps(
         unsigned,
         sort_keys=True,
@@ -275,7 +277,15 @@ def test_generator_passes_verified_bundle_snapshot_to_parser(
     def fake_load_bundle(value, *, expected_registry_sha256):
         captured["value"] = value
         captured["registry"] = expected_registry_sha256
-        return {}, [], {}
+        return (
+            {},
+            [{}, {}, {}],
+            {
+                "authorized_sample_count": 3,
+                "mask_bindings_sha256": "d" * 64,
+                "provenance_manifest_sha256": "e" * 64,
+            },
+        )
 
     monkeypatch.setattr(generator, "_load_bundle", fake_load_bundle)
     monkeypatch.setattr(generator, "_build_delta", lambda *_args: None)
@@ -295,6 +305,80 @@ def test_generator_passes_verified_bundle_snapshot_to_parser(
     )
 
     assert captured == {"value": snapshot, "registry": "c" * 64}
+    summary = json.loads(
+        (tmp_path / "out/qualitative_demo_receipts.json").read_text(encoding="ascii")
+    )
+    assert summary == {
+        "aggregate_mask_bindings_sha256": "d" * 64,
+        "artifact_role": "derived_public_aggregate_provenance",
+        "authorized_sample_count": 3,
+        "evidence_class": "train_screen / exact_fixed_cache / historical_cache_provenance_drift",
+        "evidence_registry_sha256": "c" * 64,
+        "external_runtime_bundle_sha256": snapshot.sha256,
+        "panel_caption": generator.PANEL_CAPTION,
+        "provenance_manifest_sha256": "e" * 64,
+        "release_manifest_sha256": sha256_file(DEFAULT_MANIFEST),
+        "schema_version": "loop206.qualitative_public_summary.v1",
+        "source_record_count": 3,
+    }
+
+
+def test_generator_rejects_release_rotation_immediately_before_receipt_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    release = tmp_path / "release.json"
+    release.write_bytes(b"release-v1")
+    bundle_path = tmp_path / "bundle.npz"
+    bundle_path.write_bytes(b"bundle")
+    bundle_snapshot = ImmutableSnapshot.from_bytes(b"bundle")
+    evidence = generator.Loop206DeltaEvidence(
+        registry_sha256="c" * 64,
+        dice=generator.MetricDelta(-0.1, (-0.2, -0.05)),
+        boundary_f1=generator.MetricDelta(-0.01, (-0.02, 0.01)),
+    )
+    monkeypatch.setattr(generator, "DEFAULT_MANIFEST", release)
+    monkeypatch.setattr(generator, "_style", lambda: None)
+    monkeypatch.setattr(generator, "load_loop206_delta_evidence", lambda _path: evidence)
+    monkeypatch.setattr(
+        generator.ImmutableSnapshot,
+        "read",
+        classmethod(lambda _cls, _path: bundle_snapshot),
+    )
+    monkeypatch.setattr(
+        generator,
+        "_load_bundle",
+        lambda *_args, **_kwargs: (
+            {},
+            [{}, {}, {}],
+            {
+                "authorized_sample_count": 3,
+                "mask_bindings_sha256": "d" * 64,
+                "provenance_manifest_sha256": "e" * 64,
+            },
+        ),
+    )
+    monkeypatch.setattr(generator, "_build_delta", lambda *_args: None)
+
+    def rotate_release(*_args) -> None:
+        release.write_bytes(b"release-v2")
+
+    monkeypatch.setattr(generator, "_build_qualitative", rotate_release)
+    output = tmp_path / "out"
+
+    with pytest.raises(ValueError, match="release manifest rotated during generation"):
+        generator.main(
+            [
+                "--evidence-registry",
+                str(REGISTRY),
+                "--receipt-bundle",
+                str(bundle_path),
+                "--expected-receipt-bundle-sha256",
+                bundle_snapshot.sha256,
+                "--output-dir",
+                str(output),
+            ]
+        )
+    assert not (output / "qualitative_demo_receipts.json").exists()
 
 
 def test_capture_selection_uses_masks_from_verified_index_snapshot(
@@ -355,18 +439,73 @@ def test_exact_caption_is_attached_to_each_of_15_modality_subplots() -> None:
 
 def test_drawio_uses_exact_loop191_model_label() -> None:
     source = (FIGURES / "evidence_pipeline.drawio").read_text(encoding="utf-8")
-    assert (
-        'value="Loop191 IMP-SegFormer-B3 (MiT-B3 U-Net implementation)"'
-        in source
+    assert 'value="L191-C0-clean-v3-IMP-control"' in source
+    assert 'value="L192-nnUNet-v2-raw-100ep"' in source
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ('id="6"', 'id="wrong"'),
+        (
+            '<mxCell id="1" parent="0" />',
+            '<mxCell id="1" parent="0" /><mxCell id="6" />',
+        ),
+        ('value="L191-C0-clean-v3-IMP-control"', 'value="wrong"'),
+        ('pageWidth="900"', 'pageWidth="901"'),
+        ('x="215" y="35" width="230" height="50"', 'x="216" y="35" width="230" height="50"'),
+        ('id="22"', 'id="wrong-edge"'),
+        ('source="5" target="6"', 'source="5" target="7"'),
+    ],
+)
+def test_evidence_pipeline_rejects_xml_spec_drift(
+    tmp_path: Path, old: str, new: str
+) -> None:
+    from scripts.paper.generate_evidence_pipeline import render
+
+    original = (FIGURES / "evidence_pipeline.drawio").read_text(encoding="utf-8")
+    assert old in original
+    source = tmp_path / "drifted.drawio"
+    source.write_text(original.replace(old, new, 1), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="draw.io source spec mismatch"):
+        render(source, tmp_path / "output.pdf")
+
+
+def test_evidence_pipeline_manifest_binds_generator_source() -> None:
+    manifest = json.loads(
+        (ROOT / "paper/clean_v3_loop206/artifact_manifest.json").read_text(
+            encoding="ascii"
+        )
     )
+    figure = manifest["figures"]["evidence_pipeline"]
+    generator_path = ROOT / figure["generation_source_path"]
+
+    assert figure["generation_source_path"] == "scripts/paper/generate_evidence_pipeline.py"
+    assert hashlib.sha256(generator_path.read_bytes()).hexdigest() == figure[
+        "generation_source_sha256"
+    ]
+    packet_path = ROOT / "paper/clean_v3_loop206" / figure[
+        "visual_review_packet_path"
+    ]
+    packet = json.loads(packet_path.read_text(encoding="ascii"))
+    preview_path = ROOT / "paper/clean_v3_loop206" / packet["preview_path"]
+    assert hashlib.sha256(packet_path.read_bytes()).hexdigest() == figure[
+        "visual_review_packet_sha256"
+    ]
+    assert hashlib.sha256(preview_path.read_bytes()).hexdigest() == packet[
+        "preview_sha256"
+    ]
+    assert packet["editable_source_sha256"] == figure["editable_source_sha256"]
+    assert packet["pdf_sha256"] == figure["sha256"]
 
 
 def test_manifest_binds_full_capture_render_chain_and_external_hashes() -> None:
     manifest_path = ROOT / "paper/clean_v3_loop206/artifact_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="ascii"))
     qualitative = manifest["figures"]["qualitative_demo"]
-    receipts_path = ROOT / "paper/clean_v3_loop206" / qualitative["receipt_path"]
-    receipts = json.loads(receipts_path.read_text(encoding="ascii"))
+    summary_path = ROOT / "paper/clean_v3_loop206" / qualitative["public_summary_path"]
+    summary = json.loads(summary_path.read_text(encoding="ascii"))
 
     assert len(qualitative["generation_chain"]) == 2
     capture_command, render_command = qualitative["generation_chain"]
@@ -374,26 +513,19 @@ def test_manifest_binds_full_capture_render_chain_and_external_hashes() -> None:
     assert "--output <AUTHORIZED_RECEIPT_BUNDLE>" in capture_command
     assert "--evidence-registry <EVIDENCE_REGISTRY>" in render_command
     assert "--receipt-bundle <AUTHORIZED_RECEIPT_BUNDLE>" in render_command
-    assert qualitative["external_runtime_bundle_sha256"] == receipts[
-        "runtime_bundle_sha256"
+    assert qualitative["external_runtime_bundle_sha256"] == summary[
+        "external_runtime_bundle_sha256"
     ]
-    assert qualitative["provenance_manifest_sha256"] == receipts[
-        "display_authorization"
-    ]["provenance_manifest_sha256"]
-    authorization = receipts["display_authorization"]
-    assert authorization["hash_binding"] == (
-        "sha256_raw+sha256_rgb+mask_sha256_raw+mask_sha256_binary"
-    )
-    assert len(authorization["mask_bindings_sha256"]) == 64
-    for receipt in receipts["receipts"]:
-        assert receipt["display_authorization"] == authorization
-        assert set(receipt["ground_truth_binding"]) == {
-            "mask_sha256_raw",
-            "mask_sha256_binary",
-            "mask_sha256_runtime",
-        }
-    assert qualitative["provenance_receipt_sha256"] == hashlib.sha256(
-        receipts_path.read_bytes()
+    assert qualitative["provenance_manifest_sha256"] == summary[
+        "provenance_manifest_sha256"
+    ]
+    assert qualitative["display_authorization"]["mask_bindings_sha256"] == summary[
+        "aggregate_mask_bindings_sha256"
+    ]
+    assert summary["source_record_count"] == 3
+    assert "receipts" not in summary
+    assert qualitative["public_summary_sha256"] == hashlib.sha256(
+        summary_path.read_bytes()
     ).hexdigest()
     assert qualitative["evidence_registry_sha256"] == manifest[
         "evidence_registry_sha256"

@@ -13,13 +13,16 @@ import numpy as np
 
 from lesion_robustness.packed_extra_channel import sha256_rgb_array
 from lesion_robustness.demo.immutable_io import ImmutableSnapshot
+from lesion_robustness.release_manifest import fixed_cache_projection
 
 
-CACHE_SCHEMA = "loop206.leakage_safe_pilot_cache.v2"
-ARTIFACT_TYPE = "loop206_packed_binary_channel"
-DATASET_INDEX_SHA256 = "e88a3cc144b799d214f40b85064665d3348bc8bac3ead549f80b96d436f69fc3"
-LIVE_CONFIG_SHA256 = "e3110561451dc735f996a564ad12202811266b805696a919a20784602f8f4903"
-LIVE_CONFIG_SCHEMA = "loop206.demo.live.v1"
+_RELEASE_FIXED_CACHE = fixed_cache_projection()
+_CACHE_CONTRACT = _RELEASE_FIXED_CACHE["fixed_cache"]
+CACHE_SCHEMA = str(_CACHE_CONTRACT["schema_version"])
+ARTIFACT_TYPE = str(_CACHE_CONTRACT["artifact_type"])
+DATASET_INDEX_SHA256 = str(_RELEASE_FIXED_CACHE["dataset_index"]["sha256"])
+LIVE_CONFIG_SHA256 = str(_RELEASE_FIXED_CACHE["live_config"]["sha256"])
+LIVE_CONFIG_SCHEMA = str(_RELEASE_FIXED_CACHE["live_config"]["schema_version"])
 _PRODUCTION_PROVIDER_TOKEN = object()
 _AUTHORIZED_SAMPLE_TOKEN = object()
 
@@ -55,13 +58,15 @@ class FixedCacheExpectations:
 
     @classmethod
     def loop206(cls) -> "FixedCacheExpectations":
+        candidate = _CACHE_CONTRACT["candidate"]
+        zero = _CACHE_CONTRACT["zero"]
         return cls(
-            count=536,
-            shape=(384, 384),
-            candidate_manifest_sha256="48e48290507eff6e4da8357e3310db9305a920f731c5b49890851d058d892255",
-            candidate_data_sha256="3f49e43524772b9eee17a146ff47cb15361cf78b2ce77f8c5b25c46b8f019ebb",
-            zero_manifest_sha256="b92bd22e5425354b46bc019f3ab6d3daddc24568670717be2654c8938894c0da",
-            zero_data_sha256="c8f67865341c41e506c41f9ef3221861d2c4a12f771c7eee4159886fc718fa18",
+            count=int(_CACHE_CONTRACT["count"]),
+            shape=tuple(int(value) for value in _CACHE_CONTRACT["shape"]),
+            candidate_manifest_sha256=str(candidate["manifest_sha256"]),
+            candidate_data_sha256=str(candidate["data_sha256"]),
+            zero_manifest_sha256=str(zero["manifest_sha256"]),
+            zero_data_sha256=str(zero["data_sha256"]),
         )
 
 
@@ -422,7 +427,9 @@ class ProductionFixedSampleProvider:
             or image_snapshot.decoded_rgb_sha256(original) != raw["sha256_rgb"]
         ):
             raise ValueError("Loop206 fixed original image hash mismatch")
-        resized, _ = resize_image_and_mask(original, None, (384, 384))
+        resized, _ = resize_image_and_mask(
+            original, None, self._pair.expectations.shape
+        )
         if not np.array_equal(resized, typed.image):
             raise ValueError("Loop206 fixed decoded image binding mismatch")
         view = str(corruption).strip().lower()

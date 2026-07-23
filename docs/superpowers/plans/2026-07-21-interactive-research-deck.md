@@ -49,7 +49,7 @@ def test_scientific_claims_are_bounded():
 
 - [ ] **Step 2: Run RED**
 
-Run: `E:\0. IMP\.venv-win\Scripts\python.exe -m pytest tests/presentation/test_interactive_deck.py -q`
+Run: `<PYTHON_EXE> -m pytest tests/presentation/test_interactive_deck.py -q`
 
 Expected: FAIL because `content.json` does not exist.
 
@@ -109,7 +109,7 @@ output bytes with `Get-FileHash`. Write project-relative paths only.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/presentation/build_deck_assets.ps1
-E:\0. IMP\.venv-win\Scripts\python.exe -m pytest tests/presentation/test_interactive_deck.py -q
+<PYTHON_EXE> -m pytest tests/presentation/test_interactive_deck.py -q
 ```
 
 Expected: PASS; no absolute path in manifest.
@@ -293,7 +293,7 @@ git commit -m "build(deck): package portable presentation"
 - [ ] **Step 1: Run full automated gates**
 
 ```powershell
-E:\0. IMP\.venv-win\Scripts\python.exe -m pytest tests/presentation tests/demo -q
+<PYTHON_EXE> -m pytest tests/presentation tests/demo -q
 git diff --check
 ```
 

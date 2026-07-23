@@ -1,0 +1,47 @@
+schema_version: imp.rq1_v2.config.v1
+arm: imp
+model_id: RQ1v2-IMP-MiT-B3-UNet
+run_id: imp_seed2206
+seed: 2206
+conditions: [clean, low_brightness, low_contrast, gaussian_noise, gaussian_blur, jpeg_compression]
+geometry:
+  input_hw: [384, 384]
+  probability_restore: bilinear_to_original_before_threshold
+  metric_geometry: original_image
+  threshold: 0.5
+metric_contract:
+  source: src/lesion_robustness/research/rq1_metrics.py
+  source_sha256: 8f0dcaec8a2b7768450955c36b656ccbaa55022b06619d78cbec649790cf1d06
+  metrics: [dice, iou, precision, recall, boundary_f1, hd95, assd]
+  boundary_tolerance_original_pixels: 2
+  empty_mask_policy: both_empty_perfect;one_empty_diagonal_penalty
+training:
+  model: segmentation_models_pytorch.Unet
+  encoder_name: timm-mit_b3
+  encoder_weights: imagenet
+  epochs: 100
+  batch_size: 4
+  optimizer: AdamW
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  scheduler: cosine
+  loss: bce_focal_tversky_bdou
+  augmentation: clean_v3_imp_recipe_v1
+  initialization: imagenet_state_from_experiment_input_manifest
+  num_workers: 0
+  amp: true
+  checkpoint_selection: final_epoch_only
+  deterministic: true
+private_inputs:
+  dataset_index_env: IMP_CLEAN_V3_INDEX
+  experiment_manifest_env: IMP_RQ1_V2_EXPERIMENT_INPUT
+  training_input_env: IMP_RQ1_V2_IMP_INITIALIZATION
+  training_input_artifact_key: artifact_file_sha256
+output:
+  checkpoint_env: IMP_RQ1_V2_OUTPUT_ROOT
+  checkpoint_template: "{run_id}/final.pt"
+  checkpoint_selection: final_epoch_only
+budget:
+  max_wall_hours: 24
+  max_checkpoint_bytes: 2147483648
+  max_job_storage_bytes: 25000000000

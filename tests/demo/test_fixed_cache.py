@@ -13,6 +13,10 @@ from lesion_robustness.demo.fixed_cache import (
     FixedCachePair,
     sha256_rgb_array,
 )
+from lesion_robustness.release_manifest import fixed_cache_projection
+
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _canonical_hash(value: object) -> str:
@@ -156,6 +160,32 @@ def _holdout_row() -> dict[str, object]:
         "fold": 4,
         "source_split": "train",
     }
+
+
+def test_fixed_cache_module_contains_no_canonical_release_pin_literals() -> None:
+    projection = fixed_cache_projection()
+    fixed = projection["fixed_cache"]
+    pins = (
+        projection["ordered_universe_sha256"],
+        projection["dataset_index"]["path"],
+        projection["dataset_index"]["sha256"],
+        projection["live_config"]["path"],
+        projection["live_config"]["schema_version"],
+        projection["live_config"]["sha256"],
+        fixed["schema_version"],
+        fixed["artifact_type"],
+        fixed["candidate"]["manifest_path"],
+        fixed["candidate"]["manifest_sha256"],
+        fixed["candidate"]["data_sha256"],
+        fixed["zero"]["manifest_path"],
+        fixed["zero"]["manifest_sha256"],
+        fixed["zero"]["data_sha256"],
+        str(fixed["count"]),
+        str(tuple(fixed["shape"])),
+    )
+    source = (ROOT / "src/lesion_robustness/demo/fixed_cache.py").read_text("utf-8")
+
+    assert not any(pin in source for pin in pins)
 
 
 def test_fixed_lookup_uses_group_and_corruption_not_historical_path(tmp_path: Path) -> None:

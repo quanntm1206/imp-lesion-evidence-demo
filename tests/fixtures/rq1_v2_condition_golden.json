@@ -1,0 +1,29 @@
+{
+  "condition_rgb_sha256": {
+    "clean": "12adc9dff80688800f2f591f0da6ab2f8109d61d910697801f57669ec0d719d3",
+    "gaussian_blur": "098fd884dbff5e22e2c146ea002d94e87c51dde54ecc74a79fb4a73decceb411",
+    "gaussian_noise": "4996d88cc057841a22251ce945ecb84a8e02a4b4296f7a4365f3cdffed372f73",
+    "jpeg_compression": "896c0575202304eccbf8a69fa8302ac66db3d09d60368fe0ffa01e481c5eaa56",
+    "low_brightness": "b43f19fa01e921406ad6053bff6f73cedcc243de60293171f23ea6aa8edea44f",
+    "low_contrast": "2c93c55179f11c23fb1fae891945001f367158d85517da42b6534bed6581d778"
+  },
+  "condition_uint64_seeds": {
+    "clean": 11014148199122613057,
+    "gaussian_blur": 11325026900250914310,
+    "gaussian_noise": 2654481043629223872,
+    "jpeg_compression": 15707255423797903273,
+    "low_brightness": 4216101521240603699,
+    "low_contrast": 6026483641637571443
+  },
+  "dependency_versions": {
+    "numpy": "2.4.6",
+    "opencv": "4.13.0",
+    "pillow": "12.2.0"
+  },
+  "fixture_group_key": "RQ1v2-fixture-group",
+  "fixture_sample_id": "RQ1v2-fixture-sample",
+  "input_sha256": "12adc9dff80688800f2f591f0da6ab2f8109d61d910697801f57669ec0d719d3",
+  "ordered_panel_sha256": "7d0e6b07b7fe9bafe548cc58d84cebcca57e7ab7434e8de1d6bb03f2e2fe7f23",
+  "protocol_sha256": "d9f68532c679b5a184825ab637ea037712424c28e2f4176b6f3343d0268e959d",
+  "schema_version": "imp.rq1_v2.condition_golden.v1"
+}

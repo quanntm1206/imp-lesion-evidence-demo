@@ -4,7 +4,7 @@
 
 The \cleanv{} manifest contains 2,869 dermoscopic image--mask pairs sourced from ISIC 2016, 2017, and 2018 challenge data \citep{isic2016challenge,isic2017challenge,isic2018challenge}. The split contains 2,008 training, 431 validation, and 430 sealed test rows. Each row records source dataset, original image ID, patient and lesion identifiers when available, exact raw and decoded-RGB hashes, perceptual hash, duplicate group, split group, and a transitive \cleanv{} component identifier.
 
-The integrity audit reported zero overlap across train, validation, and test partitions for patient, lesion, exact-duplicate, and split-group identities. Perceptual-hash review covered all flagged near-duplicate pairs. These checks reduce known identity leakage; they do not prove that no unrecorded biological relation exists between all images.
+The recorded source-report audit reported zero overlap across train, validation, and test partitions for patient, lesion, exact-duplicate, and split-group identities. Perceptual-hash review covered all flagged near-duplicate pairs. These checks reduce known identity leakage; they do not prove that no unrecorded biological relation exists between all images.
 
 \subsection{Repair of contaminated legacy evidence}
 

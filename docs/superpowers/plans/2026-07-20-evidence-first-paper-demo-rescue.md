@@ -351,7 +351,7 @@ Expected: FAIL because `lesion_robustness.demo.data_index` does not exist.
 
 - [ ] **Step 3: Implement the indexer**
 
-Use `data_manifest.sha256_file` and `data_manifest.sha256_rgb`. Index images by basename; index masks by the original mask basename. Require exactly 384 rows, `308 fit + 76 holdout`, source split `train`, unique `loop205_group_key`, hashes matching `sha256_raw` and `sha256_rgb`, and zero fit/holdout group overlap. Serialize only relative paths under user-provided roots; never serialize historic `/home/admin_mugen/...` paths.
+Use `data_manifest.sha256_file` and `data_manifest.sha256_rgb`. Index images by basename; index masks by the original mask basename. Require exactly 384 rows, `308 fit + 76 holdout`, source split `train`, unique `loop205_group_key`, hashes matching `sha256_raw` and `sha256_rgb`, and zero fit/holdout group overlap. Serialize only relative paths under user-provided roots; never serialize historic `<LEGACY_HOME>/...` paths.
 
 - [ ] **Step 4: Run against available roots**
 
@@ -360,7 +360,7 @@ Run:
 ```powershell
 uv run --extra analysis python scripts/demo/index_loop206_dataset.py `
   --manifest data/splits/loop206_pilot_manifest.csv `
-  --root E:\datasets `
+  --root <DATA_ROOT> `
   --output demo_runtime/loop206_dataset_index.json
 ```
 
@@ -934,8 +934,8 @@ Run on laptop:
 
 ```powershell
 $remote = gh repo view imp-lesion-evidence-demo --json sshUrl -q .sshUrl
-git clone $remote E:\imp-lesion-evidence-demo
-Set-Location E:\imp-lesion-evidence-demo
+git clone $remote <REPO_ROOT>
+Set-Location <REPO_ROOT>
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1
 git status --short
 ```

@@ -18,6 +18,9 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Audit public repository surface
+        run: python scripts/release/audit_public_surface.py --repo-root . --mode working-tree
+
       - name: Install pinned uv and Python
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:

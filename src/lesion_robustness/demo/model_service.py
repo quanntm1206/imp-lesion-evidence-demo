@@ -25,6 +25,7 @@ from lesion_robustness.demo.geometry import overlay_mask, prepare_image, restore
 from lesion_robustness.demo.immutable_io import ImmutableSnapshot
 from lesion_robustness.demo.loop206_prior import load_deployment_prior_with_receipt_hash
 from lesion_robustness.preprocessing import preprocess_image_from_config
+from lesion_robustness.release_manifest import registry_projection
 
 
 REGISTRY_SCHEMA = "loop206.demo.models.v1"
@@ -32,22 +33,7 @@ DEFAULT_SEED = 206
 _INFERENCE_LOCK = Lock()
 _AUTHORIZATION_TOKEN = object()
 _REGISTRY_TOKEN = object()
-PINNED_REGISTRY = {
-    "schema_version": REGISTRY_SCHEMA,
-    "control": {
-        "model_id": "L206-control-s206",
-        "checkpoint_env": "IMP_LOOP206_CONTROL_CHECKPOINT",
-        "checkpoint_sha256": "be606b0a0940839b019ea60117dda4b27f9b8f04d54306b5b676f2c29516fcef",
-    },
-    "candidate": {
-        "model_id": "L206-contour-channel-s206",
-        "checkpoint_env": "IMP_LOOP206_CANDIDATE_CHECKPOINT",
-        "checkpoint_sha256": "afb86b2a5161189369dbc3c985e78f214c305470661048c6643726612f57638b",
-    },
-    "prior_env": "IMP_LOOP206_PRIOR",
-    "prior_receipt_env": "IMP_LOOP206_PRIOR_RECEIPT",
-    "prior_receipt_sha256": None,
-}
+PINNED_REGISTRY = registry_projection()
 
 
 class CandidateUnavailableError(RuntimeError):

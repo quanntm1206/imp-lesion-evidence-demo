@@ -9,6 +9,11 @@ from pathlib import Path
 import re
 from typing import Any, Mapping
 
+from lesion_robustness.release_manifest import (
+    DEFAULT_MANIFEST,
+    paper_projection,
+)
+
 
 EVIDENCE_CLASSES = {
     "protected_validation",
@@ -100,6 +105,8 @@ def _metrics(payload: Mapping[str, Any], prefix: str) -> dict[str, float]:
 
 
 def _loop191_observation(payload: Mapping[str, Any]) -> dict[str, Any]:
+    comparison = paper_projection()["comparisons"][0]
+    imp_model_id = str(comparison["left_model_id"])
     if payload.get("loop") != 191 or payload.get("test_opened") is not False:
         raise ValueError("Loop191 source is not the sealed validation report")
     integrity = payload.get("pre_pilot_integrity", {}).get("clean_v3", {})
@@ -108,13 +115,13 @@ def _loop191_observation(payload: Mapping[str, Any]) -> dict[str, Any]:
     controls = [
         row
         for row in payload.get("candidates", [])
-        if row.get("id") == "L191-C0-clean-v3-IMP-control" and row.get("role") == "control"
+        if row.get("id") == imp_model_id and row.get("role") == "control"
     ]
     if len(controls) != 1:
         raise ValueError("Loop191 control observation is missing or duplicated")
     robust = controls[0].get("metrics", {}).get("robust_mean", {})
     return {
-        "model_id": "L191-C0-clean-v3-IMP-control",
+        "model_id": imp_model_id,
         "display_name": "IMP-SegFormer-B3",
         "dataset_version": "Clean-v3",
         "partition": "validation",
@@ -133,16 +140,18 @@ def _loop191_observation(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _loop192_observation(payload: Mapping[str, Any]) -> dict[str, Any]:
+    comparison = paper_projection()["comparisons"][0]
+    nnunet_model_id = str(comparison["right_model_id"])
     if payload.get("loop") != 192 or payload.get("test_opened") is not False:
         raise ValueError("Loop192 source is not the sealed validation report")
-    if payload.get("candidate_id") != "L192-nnUNet-v2-raw-100ep":
+    if payload.get("candidate_id") != nnunet_model_id:
         raise ValueError("Loop192 candidate identity changed")
     protocol = payload.get("evaluation_protocol", {})
     if protocol.get("model_image_size") != [256, 256] or protocol.get("metric_image_size") != [384, 384]:
         raise ValueError("Loop192 geometry contract changed")
     robust = payload.get("candidate", {}).get("robust_mean", {})
     return {
-        "model_id": "L192-nnUNet-v2-raw-100ep",
+        "model_id": nnunet_model_id,
         "display_name": "nnU-Net v2",
         "dataset_version": "Clean-v3",
         "partition": "validation",
@@ -272,6 +281,8 @@ def _loop170_comparison(bootstrap_text: str) -> dict[str, Any]:
 def _registry_hash(payload: Mapping[str, Any]) -> str:
     unsigned = dict(payload)
     unsigned.pop("registry_sha256", None)
+    # Release identity rotates independently of source-evidence content.
+    unsigned.pop("release_manifest_sha256", None)
     return hashlib.sha256(canonical_json_bytes(unsigned)).hexdigest()
 
 
@@ -324,6 +335,7 @@ def build_registry(
             },
             _loop170_comparison(sources.loop170_bootstrap.read_text(encoding="utf-8")),
         ],
+        "release_manifest_sha256": sha256_file(DEFAULT_MANIFEST),
     }
     registry["registry_sha256"] = _registry_hash(registry)
     validate_registry(registry)
@@ -335,6 +347,11 @@ def validate_registry(payload: Mapping[str, Any]) -> None:
         raise ValueError("unsupported evidence registry schema")
     if payload.get("scientific_sota_status") != "not_established":
         raise ValueError("scientific SOTA must remain not_established")
+    release_digest = str(payload.get("release_manifest_sha256", ""))
+    if len(release_digest) != 64 or not re.fullmatch(r"[0-9a-f]{64}", release_digest):
+        raise ValueError("evidence registry release manifest digest mismatch")
+    if release_digest != sha256_file(DEFAULT_MANIFEST):
+        raise ValueError("evidence registry release manifest digest mismatch")
     sources = payload.get("sources")
     if not isinstance(sources, list) or len(sources) != 5:
         raise ValueError("evidence registry requires five sources")

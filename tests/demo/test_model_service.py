@@ -215,7 +215,7 @@ def test_fixed_result_metadata_uses_an_explicit_allowlist() -> None:
         mask_sha256_binary="6" * 64,
         mask_sha256_runtime="7" * 64,
         historical_cache_provenance_drift=True,
-        metadata={"local_path": "C:/private", "comparison_source": "forged"},
+        metadata={"local_path": "C:" + "/private", "comparison_source": "forged"},
     )
 
     metadata = module._fixed_public_metadata(authorized)

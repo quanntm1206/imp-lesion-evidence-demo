@@ -4,9 +4,16 @@ const state = {
   content: null,
   slides: [],
   currentIndex: 0,
+  presenterRoute: [],
   notesOpen: false,
   focusNode: null,
 };
+
+const DEFAULT_PRESENTER_ROUTE = [
+  "s01-title", "s02-leakage", "s03-questions", "s04-pipeline",
+  "s05-data", "s06-models", "s07-validation", "s08-ablation-design",
+  "s09-negative-result", "s10-demo", "s16-reproducibility", "s17-conclusion",
+];
 
 const slidesRoot = document.getElementById("slides");
 const deckRoot = document.getElementById("deck");
@@ -293,18 +300,22 @@ function createDemoStage(slideData) {
   const stage = element("div", "detail-stage");
   stage.append(createBreadcrumb(slideData.id));
   const figure = element("div", "figure-stage demo-stage");
-  const image = element("img", "");
-  image.src = "assets/qualitative-demo.png";
-  image.alt = "Three authorized train-screen fixed-cache comparisons showing image, two masks, disagreement, and provider-bound ground truth";
+  figure.dataset.groundTruthState = slideData.live_ground_truth_state || "ground_truth_not_loaded";
+  const imageFrame = element("div", "demo-row-frame demo-row-middle");
+  const image = element("img", "demo-row-image");
+  image.src = "assets/qualitative-demo-middle.png";
+  image.alt = "Authorized fixed-cache row showing RGB, ground truth, IMP control mask, and candidate mask";
+  imageFrame.append(image);
   const caption = element("div", "figure-caption");
   caption.append(element("p", "claim", slideData.claim));
   appendBodyList(caption, slideData.body);
+  caption.append(element("p", "demo-boundary", "illustrative fixed-cache examples; not protected-test evidence"));
   const link = element("a", "demo-action", "Open evidence workbench ↗");
   link.href = safeDemoUrl();
   link.target = "_blank";
   link.rel = "noopener noreferrer";
   caption.append(link);
-  figure.append(image, caption);
+  figure.append(imageFrame, caption);
   stage.append(figure);
   return stage;
 }
@@ -464,6 +475,17 @@ function showSlide(targetIndex, options = {}) {
   window.dispatchEvent(new CustomEvent("deck:slidechange", { detail: { id, index: bounded, direction } }));
 }
 
+function stepPresenter(delta) {
+  const currentId = currentData()?.id;
+  const routeIndex = state.presenterRoute.indexOf(currentId);
+  if (routeIndex < 0) {
+    goToId(delta > 0 ? "s16-reproducibility" : "s10-demo");
+    return;
+  }
+  const nextId = state.presenterRoute[routeIndex + delta];
+  if (nextId) goToId(nextId);
+}
+
 function handleKey(event) {
   if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
   if (event.target instanceof HTMLAnchorElement || event.target instanceof HTMLButtonElement) {
@@ -471,10 +493,10 @@ function handleKey(event) {
   }
   if (event.key === "ArrowRight" || event.key === "PageDown") {
     event.preventDefault();
-    showSlide(state.currentIndex + 1);
+    stepPresenter(1);
   } else if (event.key === "ArrowLeft" || event.key === "PageUp") {
     event.preventDefault();
-    showSlide(state.currentIndex - 1);
+    stepPresenter(-1);
   } else if (event.key === "Home") {
     event.preventDefault();
     showSlide(0);
@@ -496,8 +518,8 @@ function handleKey(event) {
 }
 
 function bindControls() {
-  previousButton.addEventListener("click", () => showSlide(state.currentIndex - 1));
-  nextButton.addEventListener("click", () => showSlide(state.currentIndex + 1));
+  previousButton.addEventListener("click", () => stepPresenter(-1));
+  nextButton.addEventListener("click", () => stepPresenter(1));
   pipelineButton.addEventListener("click", () => goToId("s04-pipeline"));
   notesToggle.addEventListener("click", () => setNotesOpen(!state.notesOpen));
   notesClose.addEventListener("click", () => setNotesOpen(false));
@@ -511,9 +533,18 @@ function bindControls() {
 
 async function initialize() {
   try {
-    const response = await fetch("content.json", { cache: "no-store" });
-    if (!response.ok) throw new Error(`content request failed: ${response.status}`);
-    state.content = await response.json();
+    const embeddedContent = document.getElementById("deck-content");
+    if (embeddedContent?.textContent?.trim()) {
+      state.content = JSON.parse(embeddedContent.textContent);
+    } else {
+      const response = await fetch("content.json", { cache: "no-store" });
+      if (!response.ok) throw new Error(`content request failed: ${response.status}`);
+      state.content = await response.json();
+    }
+    const configuredRoute = state.content.meta?.presenter_route;
+    state.presenterRoute = Array.isArray(configuredRoute) && configuredRoute.length
+      ? configuredRoute
+      : DEFAULT_PRESENTER_ROUTE;
     renderSlides();
     bindControls();
     const hashIndex = indexForId(window.location.hash.slice(1));
@@ -525,6 +556,7 @@ async function initialize() {
       currentId: () => currentData().id,
       slideCount: () => state.slides.length,
       pipelineTargets: () => state.content.pipeline.map((node) => node.target),
+      presenterRoute: () => [...state.presenterRoute],
     };
   } catch (error) {
     console.error("presentation initialization failed", error);

@@ -154,3 +154,13 @@ def test_registry_rejects_source_hash_drift(
     registry["sources"][0]["sha256"] = "0" * 64
     with pytest.raises(ValueError, match="registry hash"):
         validate_registry(registry)
+
+
+def test_registry_rejects_forged_release_digest_with_current_registry_hash(
+    frozen_reports: EvidenceSources, tmp_path: Path
+) -> None:
+    registry = build_registry(frozen_reports, project_root=tmp_path)
+    registry["release_manifest_sha256"] = "a" * 64
+
+    with pytest.raises(ValueError, match="release manifest"):
+        validate_registry(registry)

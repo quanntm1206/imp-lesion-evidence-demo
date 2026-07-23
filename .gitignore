@@ -6,6 +6,23 @@
 /demo_runtime/
 /logs/
 /weights/
+/tmp/
+/uploads/
+/raw_receipts/
+/receipts/
+
+# Agent and verification scratch directories
+/.superpowers/
+/.dg-*/
+/.final-verify-*/
+/.p7*/
+/.pt*/
+/.pt9-temp-new-golden.json
+outputs/imp-lesion-evidence-defense-manifest-stale-20260721.json
+/.t7b-*/
+/.pytest-*/
+/.pytest_*/
+/.task*/
 
 # Model and data formats
 *.pt
@@ -28,6 +45,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 /.worktrees/
+/outputs/*-base.pptx
+/outputs/*.inspect.ndjson
 
 # Secrets and uploads
 /secrets/
@@ -36,6 +55,19 @@ __pycache__/
 !.env.example
 uploads/
 cloudflared*.log
+
+# Binary bundles and machine images
+*.7z
+*.docker
+*.img
+*.ova
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+*.vhd
+*.vhdx
+*.zip
 
 # LaTeX build products
 /paper/clean_v3_loop206/main.pdf

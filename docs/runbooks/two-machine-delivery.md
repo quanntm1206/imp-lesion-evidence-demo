@@ -2,15 +2,31 @@
 
 ## Fixed Responsibilities
 
-- Main workstation, RTX 5060 Ti: artifact generation, model execution, and demo serving. Use `main` for integration and `demo-runtime` for source changes.
-- Laptop, RTX 4060 8 GB GPU and 16 GB RAM: clean-clone bootstrap, paper build, citation/read-only review, CPU tests, and an optional single-GPU smoke check. Use `paper-review` for source changes.
-- Do not load two models concurrently or claim laptop training capacity. The laptop assignment is review and validation, not full training.
+- Main workstation, RTX 5060 Ti: private artifact recovery, primary verification,
+  model execution, and public rehearsal. Use `codex/dual-live-demo` until final
+  integration.
+- Laptop, RTX 4060 8 GB GPU and 16 GB RAM: clean-clone bootstrap, paper build,
+  review, CPU tests, single-GPU sidecar verification, and emergency/local demo
+  serving from the same `codex/dual-live-demo` commit.
+- The live pipeline runs IMP then nnU-Net sequentially. Do not change it to
+  concurrent inference or claim the laptop can reproduce full training.
 - Browser rendering and desktop/mobile screenshots remain unverified. Any visual-review steps in this runbook are pending operator checks, not release evidence.
-- Exchange code only by private GitHub push/pull. Exchange weights, priors, caches, and data only by private LAN/USB after SHA-256 verification; never through GitHub.
+- Exchange code only through the private GitHub repository
+  `quanntm1206/imp-lesion-evidence-demo`. Exchange weights, recovered bundles,
+  priors, caches, VHD files, and data out-of-band through private LAN/USB after
+  SHA-256 verification; never through GitHub. Never push those artifacts.
+- Legacy handoff branch labels `paper-review` and `demo-runtime` remain
+  documented for compatibility only. This release uses `codex/dual-live-demo`.
 
 ## Windows Bootstrap
 
-Prerequisites: Git, `uv`, Python install access through `uv`, and either `latexmk` or both `pdflatex` and `bibtex`. The script creates the configurable `.venv-win` environment with Python 3.12 and the `dev`, `analysis`, and `demo` extras, then runs CPU tests, deterministic table generation, a portable paper audit, and the paper build.
+Prerequisites: Git, GitHub CLI, `uv`, Python install access through `uv`, Docker
+Desktop with WSL2/GPU support, a current NVIDIA driver, `cloudflared`, and
+either `latexmk` or both `pdflatex` and `bibtex`. Confirm Docker Desktop can run
+an NVIDIA CUDA container before transferring private artifacts. The bootstrap
+script creates the configurable `.venv-win` environment with Python 3.12 and
+the `dev`, `analysis`, and `demo` extras, then runs CPU tests, deterministic
+table generation, a portable paper audit, and the paper build.
 
 CPU bootstrap for a clean laptop clone:
 
@@ -49,11 +65,12 @@ Strict is the audit CLI default. It fails on any missing or mismatched source by
 
 ## Private GitHub Provisioning
 
-The owner is `quanntm1206`. Never substitute a public repository. Authenticate, create the private repository, then verify visibility before any push:
+The owner is `quanntm1206`. Never substitute a public repository. The expected
+remote is `quanntm1206/imp-lesion-evidence-demo`. Authenticate and verify
+visibility before any fetch, clone, or push:
 
 ```powershell
 gh auth status
-gh repo create quanntm1206/imp-lesion-evidence-demo --private --source . --remote origin
 gh repo view quanntm1206/imp-lesion-evidence-demo --json isPrivate,sshUrl,url
 ```
 
@@ -65,21 +82,20 @@ if ($repo.isPrivate -ne $true) { throw 'Repository privacy is not verified' }
 git remote add origin $repo.sshUrl
 ```
 
-Push without force. Task 12 preserves local `main`; integration/default-branch changes belong to final delivery:
+Push the reviewed branch without force. Do not push `main` as part of laptop
+handoff:
 
 ```powershell
-git push -u origin rescue/paper-demo
-git push origin main
-git push origin rescue/paper-demo:paper-review
-git push origin rescue/paper-demo:demo-runtime
+git push -u origin codex/dual-live-demo
 ```
 
 ## Laptop Handoff
 
-Physical laptop execution remains unverified until the operator runs it. One-command CPU handoff from PowerShell:
+Physical laptop execution remains unverified until the operator runs it. Clone
+the exact reviewed branch from PowerShell:
 
 ```powershell
-$ErrorActionPreference = 'Stop'; $repoJson = gh repo view quanntm1206/imp-lesion-evidence-demo --json isPrivate,sshUrl; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $repo = $repoJson | ConvertFrom-Json; if ($repo.isPrivate -ne $true) { throw 'Repository privacy is not verified' }; $target = Join-Path (Get-Location) 'imp-lesion-evidence-demo'; git clone --branch paper-review $repo.sshUrl $target; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Set-Location $target; powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; git status --short; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$ErrorActionPreference = 'Stop'; $repoJson = gh repo view quanntm1206/imp-lesion-evidence-demo --json isPrivate,sshUrl; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $repo = $repoJson | ConvertFrom-Json; if ($repo.isPrivate -ne $true) { throw 'Repository privacy is not verified' }; git clone --branch codex/dual-live-demo $repo.sshUrl imp-lesion-evidence-demo; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Set-Location imp-lesion-evidence-demo; powershell -ExecutionPolicy Bypass -File scripts/bootstrap_windows.ps1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; git status --short; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ```
 
 Expected operator receipt: bootstrap exits zero; portable demo tests pass with only named external-runtime integration skips; paper audit reports `passed=true errors=0 source_verification=registry-only` plus missing-source warnings; the PDF builds; `git status --short` emits nothing. Record the command exit status and commit SHA. Do not report physical-laptop verification before that receipt exists.
@@ -147,6 +163,47 @@ if ($difference) { $difference | Out-String | Write-Error; throw 'Artifact trans
 ```
 
 The manifest contains canonical relative paths only; it never records absolute paths. Stop on any missing, extra, changed, rooted, or traversal path. Do not commit, upload, paste, or attach weights, priors, datasets, caches, environment values, tokens, or absolute private paths to GitHub issues or CI logs.
+
+The Loop192 transfer must include the verified private bundle and
+`recovery_receipt.json`. On the laptop, compare the receipt SHA-256 with the
+pinned value before any Docker mount. If a local image build does not reproduce
+the pinned image ID, transfer a `docker save` archive out-of-band with its own
+SHA-256 manifest; do not change the launcher pin.
+
+## RTX 4060 Demo Preflight
+
+After private transfer verification, keep the bundle under the Git-ignored
+`demo_runtime/nnunet/recovered-container-final2` directory or pass
+`-BundlePath`. From the repository root:
+
+```powershell
+docker build -t imp-nnunet-sidecar:loop192 -f sidecar/nnunet/Dockerfile .
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/run_sidecar.ps1 -CheckOnly
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/run_sidecar.ps1
+$RunId = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssfffffffZ').ToLowerInvariant()
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/run_demo.ps1 -CheckOnly -PublicTunnelMode -PreserveMode -RunId $RunId
+```
+
+Require exact artifact/image/checkpoint identity, CUDA health, and
+`dual_smoke=passed`. Then start Gradio, test two already-public samples, and
+open Cloudflare only after the local path succeeds:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/run_demo.ps1 -PublicTunnelMode -PreserveMode -RunId $RunId
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/run_tunnel.ps1 -PreserveMode -RunId $RunId
+```
+
+The Quick Tunnel is unauthenticated. Use no private image. Stop in the required
+Cloudflare, Gradio, sidecar order with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/demo/stop_demo.ps1 -PreserveMode -RunId $RunId
+```
+
+Public mode renders and accepts bundled public/synthetic inputs only; it exposes
+no upload control or upload API. Record the commit SHA and pass/fail output
+locally. Never push weights, datasets, VHD files, uploads, recovery receipts,
+runtime receipts, Docker image archives, or public tunnel URLs.
 
 ## CI Contract
 

@@ -2,6 +2,7 @@
 FROM pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime@sha256:eee11b3b3872a8c838e35ef48f08b2d5def2080902c7f666831310ca1a0ef2be
 
 ENV PYTHONHASHSEED=0 \
+    CUBLAS_WORKSPACE_CONFIG=:4096:8 \
     OMP_NUM_THREADS=1 \
     MKL_NUM_THREADS=1 \
     OPENBLAS_NUM_THREADS=1 \
@@ -35,6 +36,9 @@ RUN python -m pip install --break-system-packages --no-cache-dir \
     && rm /tmp/requirements.lock
 
 COPY src/lesion_robustness/demo/dual_live_protocol.py /app/src/lesion_robustness/demo/dual_live_protocol.py
+COPY src/lesion_robustness/demo/runtime_identity.py /app/src/lesion_robustness/demo/runtime_identity.py
+COPY src/lesion_robustness/release_manifest.py /app/src/lesion_robustness/release_manifest.py
+COPY release/imp_release_manifest.json /app/release/imp_release_manifest.json
 COPY sidecar/nnunet /app/sidecar/nnunet
 
 RUN groupadd --gid 65532 sidecar \

@@ -1,0 +1,20 @@
+{
+  "schema_version": "imp.rq1_v2.protocol.v1",
+  "research_question": "Under one Clean-v3 adaptive-validation identity set and original-image metric geometry, how do complete IMP MiT-B3 U-Net and nnU-Net v2 systems trade overlap and boundary quality across independent training runs?",
+  "evidence_class": "adaptive_development_validation_rerun",
+  "train_count": 2008,
+  "validation_count": 431,
+  "test_v3_access": false,
+  "clean_v3_manifest_sha256": "4e86d251231bc105167910c6b5a41fc29900dff41342405657a5c2eccb67b102",
+  "dataset_index_status": "unresolved_blocked",
+  "dataset_index_sha256": null,
+  "seeds": [206, 1206, 2206],
+  "conditions": ["clean", "low_brightness", "low_contrast", "gaussian_noise", "gaussian_blur", "jpeg_compression"],
+  "metrics": ["dice", "iou", "precision", "recall", "boundary_f1", "hd95", "assd"],
+  "boundary_tolerance_original_pixels": 2,
+  "probability_restore": "bilinear_to_original_before_threshold",
+  "threshold": 0.5,
+  "primary_endpoint": "independent_arm_mean_robust_dice_delta_nnunet_minus_imp",
+  "secondary_endpoint": "independent_arm_mean_robust_boundary_f1_delta_nnunet_minus_imp",
+  "claim_limit": "adaptive validation; no protected-test or statistical-superiority claim"
+}

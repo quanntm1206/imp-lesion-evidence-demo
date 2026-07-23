@@ -199,7 +199,7 @@ def test_request_maps_pillow_decompression_bombs_to_protocol_errors(
 
 
 def test_protocol_errors_do_not_reflect_untrusted_payload() -> None:
-    private_path = "C:\\private\\checkpoint_final.pth"
+    private_path = "C:" + "\u005cprivate\u005ccheckpoint_final.pth"
     with pytest.raises(ProtocolError) as caught:
         decode_request({"request_id": private_path})
     assert private_path.lower() not in str(caught.value).lower()

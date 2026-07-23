@@ -1,17 +1,19 @@
 \section{Experimental Setup}
 
-Figure~\ref{fig:evidence-pipeline} maps each experimental and demonstration output to its evidence class before any claim is interpreted. Parallel model and ablation branches denote controlled alternatives rather than a sequential dependency. Protected-test access remains sealed throughout the pipeline.
+Figure~\ref{fig:evidence-pipeline} maps three distinct lanes before any claim is interpreted: Paper RQ1, the Fixed-cache demo, and the Live dual demo. Parallel model branches denote comparison alternatives rather than a model dependency. Protected-test access remains sealed throughout the pipeline.
+
+Prospective RQ1-v2 index/integrity admission remains \texttt{blocked}. Its source-byte verification and rerun evidence are unavailable; it cannot replace historical Paper RQ1, fixed Loop206 cache evidence, or the reconstructed live display.
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{figures/evidence_pipeline.pdf}
-\caption{Evidence-bound experimental and demonstration pipeline. The diagram separates \texttt{protected\_validation}, \texttt{train\_screen}, \texttt{legacy\_patient\_contaminated}, and sealed protected-test evidence, then applies claim gates. It supports protocol and claim-scope mapping only; it is not performance evidence.}
+\caption{Evidence-bound comparison and demonstration lanes. Paper RQ1, the fixed-cache demo, and the live dual demo use distinct inputs, model identities, outputs, and claim gates. Parallel arms are alternatives, not a sequential model chain. The figure supports protocol and claim-scope mapping only; it is not performance evidence.}
 \label{fig:evidence-pipeline}
 \end{figure*}
 
 \subsection{Architecture comparison}
 
-The primary validation table contains the Loop191 control and Loop192 nnU-Net v2. Both use the same \cleanv{} validation identities and the six-condition robustness panel. That validation partition also informed iterative development, checkpoint or model selection, and promotion decisions, so the comparison is adaptive and potentially selection-optimistic rather than confirmatory. We report robust Dice, IoU, precision, recall, and boundary F1. Because each model has one recorded run and paired per-case evidence is not locally available in the rescue environment, no confidence interval or hypothesis test is attached to this table. Differences are descriptive point estimates.
+The historical Paper RQ1 comparison is L191-C0-clean-v3-IMP-control versus L192-nnUNet-v2-raw-100ep. Both use the same \cleanv{} validation identities and the six-condition robustness panel. That validation partition also informed iterative development, checkpoint or model selection, and promotion decisions, so the comparison is adaptive and potentially selection-optimistic rather than confirmatory. We report robust Dice, IoU, precision, recall, and boundary F1. Because each model has one recorded run and paired per-case evidence is not locally available in the rescue environment, no confidence interval or hypothesis test is attached to this table. Differences are descriptive point estimates.
 
 Loop192 was evaluated against a preregistered combined promotion gate. Although its overlap and recall increased, it did not meet all boundary and precision constraints; the experiment stopped without test-v3 access. Gate failure is reported separately from metric ranking because an all-or-nothing promotion decision answers a different question from a Pareto comparison.
 

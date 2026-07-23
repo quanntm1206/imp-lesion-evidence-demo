@@ -1,0 +1,32 @@
+
+\begin{table*}[t]
+\centering
+\caption{Loop206 gate audit derived only from the hash-bound closure receipt. Every reported interval is conditional on the three selected seeds. Missing receipt fields remain \texttt{unavailable} and force \texttt{blocked} rather than reconstructing a gate decision.}
+\label{tab:loop206-gate-audit}
+\scriptsize
+\def\sidprefix{seed-}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llllllllll}
+\toprule
+gate\_id & endpoint & threshold & observed & interval & \sidprefix206 & \sidprefix1206 & \sidprefix2206 & status & source \\
+\midrule
+primary\_improvement & robust Dice delta &
+unavailable & -0.0313 & [-0.0491, -0.0156] & unavailable & unavailable & unavailable & blocked & loop206\_report@7d6fcd61259a \\
+dice\_noninferiority & robust Dice delta &
+unavailable & -0.0313 & [-0.0491, -0.0156] & unavailable & unavailable & unavailable & blocked & loop206\_report@7d6fcd61259a \\
+boundary\_noninferiority & boundary F1 delta &
+unavailable & -0.0147 & [-0.0308, 0.0010] & unavailable & unavailable & unavailable & blocked & loop206\_report@7d6fcd61259a \\
+clean\_dice & unavailable &
+unavailable & unavailable & unavailable & unavailable & unavailable & unavailable & blocked & loop206\_report@7d6fcd61259a \\
+precision & robust precision delta &
+unavailable & -0.0201 & unavailable & unavailable & unavailable & unavailable & blocked & loop206\_report@7d6fcd61259a \\
+recall & robust recall delta &
+unavailable & -0.0142 & unavailable & unavailable & unavailable & unavailable & blocked & loop206\_report@7d6fcd61259a \\
+distance & HD95 and ASSD deltas &
+unavailable & 7.7911 / 5.0786 & unavailable & unavailable & unavailable & unavailable & blocked & loop206\_report@7d6fcd61259a \\
+per\_corruption & unavailable &
+unavailable & unavailable & unavailable & unavailable & unavailable & unavailable & blocked & loop206\_report@7d6fcd61259a \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}

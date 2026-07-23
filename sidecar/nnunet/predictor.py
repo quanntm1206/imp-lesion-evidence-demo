@@ -17,14 +17,21 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from lesion_robustness.demo.dual_live_protocol import MODEL_ID, validate_binary_mask, validate_rgb
+from lesion_robustness.demo.dual_live_protocol import (
+    CHECKPOINT_SHA256,
+    MODEL_ID,
+    validate_binary_mask,
+    validate_rgb,
+)
+from lesion_robustness.release_manifest import launcher_projection, live_demo_receipt_projection
 
 
 MANIFEST_SCHEMA = "imp.nnunet.model-manifest.v1"
+_SIDECAR = launcher_projection()["sidecar"]
 EXPECTED_ARTIFACTS = (
     (
         "checkpoint_final.pth",
-        "3814716033afd464dacc573f92a5a44ff20eb7f2163d99b4f16ecff8aa278ea2",
+        CHECKPOINT_SHA256,
         267947879,
     ),
     (
@@ -34,12 +41,12 @@ EXPECTED_ARTIFACTS = (
     ),
     (
         "dataset_fingerprint.json",
-        "931da8aae52ffecd726d5928009ebdcae7002e24b035fad89177e0bc81dba85c",
+        str(_SIDECAR["fingerprint_sha256"]),
         274020,
     ),
     (
         "plans.json",
-        "b60e4defd229b03f7064dc5b66123545c91cdaa44c09d990b86690a94e1e08a7",
+        str(_SIDECAR["plans_sha256"]),
         6379,
     ),
 )
@@ -96,12 +103,18 @@ def _load_manifest(path: Path) -> dict[str, Any]:
             "runtime",
             "input",
             "artifacts",
+            "release_manifest_sha256",
         }:
             raise ValueError
         runtime = raw["runtime"]
         input_contract = raw["input"]
         artifacts = raw["artifacts"]
-        if raw["schema_version"] != MANIFEST_SCHEMA or raw["model_id"] != MODEL_ID:
+        if (
+            raw["schema_version"] != MANIFEST_SCHEMA
+            or raw["model_id"] != MODEL_ID
+            or raw["release_manifest_sha256"]
+            != live_demo_receipt_projection()["release_manifest_sha256"]
+        ):
             raise ValueError
         if not isinstance(runtime, Mapping) or dict(runtime) != {
             "distribution": "nnunetv2",
@@ -233,6 +246,18 @@ def _create_model_layout(bundle: Path) -> tempfile.TemporaryDirectory[str]:
         raise
 
 
+def _configure_deterministic_cuda(torch: Any) -> None:
+    """Apply the CUDA mode baked into the pinned reconstructed image."""
+    try:
+        torch.use_deterministic_algorithms(True)
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.allow_tf32 = False
+        torch.backends.cuda.matmul.allow_tf32 = False
+    except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+        raise RuntimeConfigurationError() from exc
+
+
 class Loop192Predictor:
     """Load Loop192 once, then serve one validated RGB image per call."""
 
@@ -264,6 +289,7 @@ class Loop192Predictor:
         if version != EXPECTED_RUNTIME_VERSION or not torch.cuda.is_available():
             raise RuntimeConfigurationError()
         _assert_runtime_api(predictor_class)
+        _configure_deterministic_cuda(torch)
 
         self._torch = torch
         self._model_layout = _create_model_layout(bundle)
@@ -272,7 +298,7 @@ class Loop192Predictor:
                 tile_step_size=0.5,
                 use_gaussian=True,
                 use_mirroring=True,
-                perform_everything_on_device=True,
+                perform_everything_on_device=False,
                 device=torch.device("cuda", 0),
                 verbose=False,
                 verbose_preprocessing=False,

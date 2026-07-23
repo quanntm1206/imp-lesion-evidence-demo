@@ -31,6 +31,7 @@ from sidecar.nnunet.predictor import (
     Loop192Predictor,
     RuntimeConfigurationError,
 )
+from lesion_robustness.release_manifest import live_demo_receipt_projection
 from sidecar.nnunet.server import make_server
 
 
@@ -316,6 +317,9 @@ def _write_bundle_and_manifest(root: Path) -> tuple[Path, Path]:
         (bundle / name).write_bytes(content)
     manifest = {
         "schema_version": "imp.nnunet.model-manifest.v1",
+        "release_manifest_sha256": live_demo_receipt_projection()[
+            "release_manifest_sha256"
+        ],
         "model_id": MODEL_ID,
         "runtime": {
             "distribution": "nnunetv2",
@@ -375,6 +379,14 @@ class FakeCuda:
 class FakeTorch:
     def __init__(self) -> None:
         self.cuda = FakeCuda()
+        self.deterministic_algorithms: bool | None = None
+        self.backends = SimpleNamespace(
+            cudnn=SimpleNamespace(benchmark=True, deterministic=False, allow_tf32=True),
+            cuda=SimpleNamespace(matmul=SimpleNamespace(allow_tf32=True)),
+        )
+
+    def use_deterministic_algorithms(self, enabled: bool) -> None:
+        self.deterministic_algorithms = enabled
 
     @staticmethod
     def device(kind: str, index: int) -> str:
@@ -541,6 +553,7 @@ def test_predictor_initializes_once_and_uses_natural_image_contract(
     runtime = FakeNnUNetPredictor.instances[0]
     assert len(runtime.initializations) == 1
     assert runtime.initializations[0][1:] == (("all",), "checkpoint_final.pth")
+    assert runtime.kwargs["perform_everything_on_device"] is False
     assert len(runtime.inputs) == 2
     nnunet_input, properties = runtime.inputs[0]
     assert nnunet_input.shape == (3, 1, 5, 7)
@@ -552,6 +565,26 @@ def test_predictor_initializes_once_and_uses_natural_image_contract(
     assert np.all(mask == 1)
     assert latency >= 0.0
     assert fake_torch.cuda.synchronizations == 4
+
+
+def test_predictor_enables_pinned_deterministic_cuda_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundle, manifest = _write_bundle_and_manifest(tmp_path)
+    _pin_test_artifacts(manifest, monkeypatch)
+    fake_torch = FakeTorch()
+
+    Loop192Predictor(
+        bundle,
+        manifest,
+        runtime_loader=lambda: (fake_torch, FakeNnUNetPredictor, "2.8.1"),
+    )
+
+    assert fake_torch.deterministic_algorithms is True
+    assert fake_torch.backends.cudnn.benchmark is False
+    assert fake_torch.backends.cudnn.deterministic is True
+    assert fake_torch.backends.cudnn.allow_tf32 is False
+    assert fake_torch.backends.cuda.matmul.allow_tf32 is False
 
 
 def test_public_manifest_pins_recovered_bundle_without_private_paths() -> None:
@@ -597,6 +630,23 @@ def test_container_uses_digest_pinned_cuda_base() -> None:
     assert "USER sidecar:sidecar" in dockerfile
     assert "NNUNET_BIND_HOST=0.0.0.0" in dockerfile
     assert "127.0.0.1:7862:7862" in plan
+
+    for source, destination in (
+        (
+            "src/lesion_robustness/demo/dual_live_protocol.py",
+            "/app/src/lesion_robustness/demo/dual_live_protocol.py",
+        ),
+        (
+            "src/lesion_robustness/demo/runtime_identity.py",
+            "/app/src/lesion_robustness/demo/runtime_identity.py",
+        ),
+        (
+            "src/lesion_robustness/release_manifest.py",
+            "/app/src/lesion_robustness/release_manifest.py",
+        ),
+        ("release/imp_release_manifest.json", "/app/release/imp_release_manifest.json"),
+    ):
+        assert f"COPY {source} {destination}" in dockerfile
 
 
 def test_reconstructed_lock_is_full_and_exactly_pinned() -> None:

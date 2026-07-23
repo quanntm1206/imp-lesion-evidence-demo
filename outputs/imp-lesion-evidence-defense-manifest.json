@@ -1,22 +1,37 @@
 {
-    "schema":  "imp.presentation.delivery/v1",
-    "slide_count":  12,
-    "generated_utc":  "2026-07-21T06:04:40Z",
-    "files":  [
-                  {
-                      "path":  "outputs/imp-lesion-evidence-defense.html",
-                      "bytes":  539725,
-                      "sha256":  "dcfc86010185481c3660caa0d0eafda19423bf1c55882f5fb7788a71c2a131bc"
-                  },
-                  {
-                      "path":  "outputs/imp-lesion-evidence-defense.pdf",
-                      "bytes":  421499,
-                      "sha256":  "2dce4918eb1bcc15c077ccb0cff782b1c0f19f2a0adfe53c376b3a34fc848054"
-                  },
-                  {
-                      "path":  "outputs/imp-lesion-evidence-defense.pptx",
-                      "bytes":  409946,
-                      "sha256":  "f19de50ecb4013011613fbae02e7082710a9f70d2f6d2d932c31524d82b0989a"
-                  }
-              ]
+  "schema": "imp.presentation.delivery/v2",
+  "package_state": "complete",
+  "current_release_manifest_sha256": "435606d5adc296be57405c65a9c725af3dff96c15f9aabf7ac0924d06387a264",
+  "slide_count": 17,
+  "content_sha256": "14c322eb1d68194fc3cf45ddf27a4eda20ba8f51c0929094cd6942119498faa2",
+  "generated_utc": "2026-07-23T05:22:56Z",
+  "files": [
+    {
+      "path": "outputs/imp-lesion-evidence-defense.html",
+      "status": "current",
+      "built_release_manifest_sha256": "435606d5adc296be57405c65a9c725af3dff96c15f9aabf7ac0924d06387a264",
+      "current_release_manifest_sha256": "435606d5adc296be57405c65a9c725af3dff96c15f9aabf7ac0924d06387a264",
+      "content_sha256": "14c322eb1d68194fc3cf45ddf27a4eda20ba8f51c0929094cd6942119498faa2",
+      "bytes": 253953,
+      "sha256": "fcd5f270c519e7de54b1dc8df18c7eeb05a893fdd485ca316c5721d737b68297"
+    },
+    {
+      "path": "outputs/imp-lesion-evidence-defense.pdf",
+      "status": "current",
+      "built_release_manifest_sha256": "435606d5adc296be57405c65a9c725af3dff96c15f9aabf7ac0924d06387a264",
+      "current_release_manifest_sha256": "435606d5adc296be57405c65a9c725af3dff96c15f9aabf7ac0924d06387a264",
+      "content_sha256": "14c322eb1d68194fc3cf45ddf27a4eda20ba8f51c0929094cd6942119498faa2",
+      "bytes": 365913,
+      "sha256": "07043eb01d9f2b60b984ddc10fac4df34c6dfc4e585ceab0a307b4f38554ce32"
+    },
+    {
+      "path": "outputs/imp-lesion-evidence-defense.pptx",
+      "status": "current",
+      "built_release_manifest_sha256": "435606d5adc296be57405c65a9c725af3dff96c15f9aabf7ac0924d06387a264",
+      "current_release_manifest_sha256": "435606d5adc296be57405c65a9c725af3dff96c15f9aabf7ac0924d06387a264",
+      "content_sha256": "14c322eb1d68194fc3cf45ddf27a4eda20ba8f51c0929094cd6942119498faa2",
+      "bytes": 213396,
+      "sha256": "e86d924ef5367e279e1b56e7312dffb2246ed983758fee26a02ddf1c8e4a25eb"
+    }
+  ]
 }

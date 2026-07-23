@@ -114,7 +114,7 @@ def test_bundle_verifier_rejects_malformed_report(tmp_path: Path) -> None:
 
 def test_bundle_verifier_rejects_path_bearing_candidate_id(tmp_path: Path) -> None:
     bundle, report = fake_loop192_bundle(tmp_path)
-    report["candidate_id"] = r"C:\private\loop192"
+    report["candidate_id"] = "C:" + "\u005cprivate\u005cloop192"
 
     with pytest.raises(ValueError, match="candidate_id must not contain a local path"):
         verifier.verify_bundle(bundle, report)

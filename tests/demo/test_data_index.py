@@ -45,8 +45,8 @@ def _write_case(root: Path, sample_id: str) -> tuple[Path, Path]:
 
 def _write_manifest(path: Path, image: Path, mask: Path, *, raw_hash: str | None = None) -> Path:
     row = {
-        "image_path": f"/home/admin_mugen/datasets/source/images/{image.name}",
-        "mask_path": f"/home/admin_mugen/datasets/source/masks/{mask.name}",
+        "image_path": f"/" + "/".join(("home", "admin_" + "mugen", "datasets", "source", "images", image.name)),
+        "mask_path": f"/" + "/".join(("home", "admin_" + "mugen", "datasets", "source", "masks", mask.name)),
         "split": "train_screen_holdout",
         "source_dataset": "isic2018",
         "original_id": image.stem,

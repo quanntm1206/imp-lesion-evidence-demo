@@ -10,7 +10,7 @@
 </head>
 <body>
   <a class="skip-link" href="#deck">Skip to presentation</a>
-  <main id="deck" class="deck" aria-live="polite" aria-busy="true">
+  <main id="deck" class="deck" data-route="core-defense" data-presenter-route="s01-title,s02-leakage,s03-questions,s04-pipeline,s05-data,s06-models,s07-validation,s08-ablation-design,s09-negative-result,s10-demo,s16-reproducibility,s17-conclusion" aria-live="polite" aria-busy="true">
     <div class="ambient ambient-a" aria-hidden="true"></div>
     <div class="ambient ambient-b" aria-hidden="true"></div>
     <div id="slides" class="slides"></div>
@@ -18,13 +18,20 @@
     <nav class="controls" aria-label="Presentation controls">
       <button id="previous" class="control-button" type="button" aria-label="Previous slide">←</button>
       <button id="pipeline" class="control-button control-button-wide" type="button">Pipeline</button>
-      <span id="counter" class="counter" aria-label="Current slide">01 / 12</span>
+      <span id="counter" class="counter" aria-label="Current slide">01 / 17</span>
       <button id="notes-toggle" class="control-button control-button-wide" type="button" aria-expanded="false">Notes</button>
       <button id="next" class="control-button" type="button" aria-label="Next slide">→</button>
     </nav>
 
     <div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
   </main>
+
+  <noscript>
+    <div class="load-error" role="alert">
+      <strong>JavaScript is required.</strong>
+      <span>Enable JavaScript to load the interactive presentation.</span>
+    </div>
+  </noscript>
 
   <aside id="notes-panel" class="notes-panel" aria-label="Speaker notes" hidden>
     <div class="notes-header">
@@ -36,7 +43,7 @@
 
   <div id="load-error" class="load-error" role="alert" hidden>
     <strong>Deck could not load.</strong>
-    <span>Serve this directory over HTTP so the evidence contract can be read.</span>
+    <span>Portable file: verify that the transfer completed and reopen it. Development source: serve this directory over HTTP.</span>
   </div>
 
   <script src="deck.js" defer></script>

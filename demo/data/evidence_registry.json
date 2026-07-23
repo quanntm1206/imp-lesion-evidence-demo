@@ -1,1 +1,265 @@
-{"claim_policy":{"clinical_use":false,"cross_protocol_ranking_allowed":false,"protected_test_claim_allowed":false},"comparisons":[{"ci95":null,"comparison_id":"L192-minus-L191","evidence_class":"protected_validation","limitations":["single-run point estimates","no paired confidence interval"],"metric":"robust_dice","point_delta":0.006047228312233588,"scientific_comparable":true,"source_ids":["loop191_report","loop192_report"]},{"ci95":[-0.049121296024302145,-0.015627817085354864],"comparison_id":"L206-contour-minus-control","evidence_class":"train_screen","metric":"robust_dice","point_delta":-0.03129624395473221,"scientific_comparable":false,"source_ids":["loop206_report"]},{"ci95":[-0.003,0.0035],"comparison_id":"Loop170-IMP-minus-nnU-Net-v2","evidence_class":"legacy_patient_contaminated","metric":"robust_dice","point_delta":0.0002,"scientific_comparable":false,"source_ids":["loop170_bootstrap"]}],"dataset":{"clean_v2_cross_split_patient_ids":3,"clean_v2_cross_split_rows":13,"clean_v3_rows":2869,"clean_v3_split_counts":{"test":430,"train":2008,"validation":431}},"observations":[{"dataset_version":"Clean-v3","display_name":"IMP-SegFormer-B3","evidence_class":"protected_validation","limitations":["single-run validation point estimate","protected test-v3 not opened","older metric geometry contract"],"metric_contract":"legacy_nearest_384_t2","model_id":"L191-C0-clean-v3-IMP-control","partition":"validation","robust_bf1":0.4145296468027299,"robust_dice":0.895870479294128,"robust_iou":0.8276836720163411,"robust_precision":0.9087624468161243,"robust_recall":0.9127938055574955,"scientific_comparable":true,"seed_count":1,"source_ids":["loop191_report"]},{"dataset_version":"Clean-v3","display_name":"nnU-Net v2","evidence_class":"protected_validation","limitations":["single-run validation point estimate","protected test-v3 not opened","256x256 prediction resized to 384x384 metric canvas"],"metric_contract":"legacy_nearest_384_t2","model_id":"L192-nnUNet-v2-raw-100ep","partition":"validation","robust_bf1":0.43691577678397314,"robust_dice":0.9019177076063616,"robust_iou":0.8353954025733779,"robust_precision":0.9055585401108206,"robust_recall":0.9246376021289167,"scientific_comparable":true,"seed_count":1,"source_ids":["loop192_report"]},{"bootstrap_resamples":10000,"corruption_count":3,"dataset_version":"Clean-v3","display_name":"Loop206 contour channel minus zero-channel control","evidence_class":"train_screen","group_count":76,"limitations":["train-screen evidence only","Clean-v3 validation, test-v3, and PH2 remained sealed","negative result applies only to the tested contour channel"],"metric_contract":"loop206_train_screen_three_corruptions_t2","model_id":"L206-contour-vs-control","partition":"train_screen","robust_bf1_ci95":[-0.030758654691150956,0.0010438469457382654],"robust_bf1_delta":-0.01465831334754726,"robust_dice_ci95":[-0.049121296024302145,-0.015627817085354864],"robust_dice_delta":-0.03129624395473221,"scientific_comparable":false,"seed_count":3,"source_ids":["loop206_report"]},{"clean_dice":0.8617,"dataset_version":"Clean-v2","display_name":"EGE-UNet","evidence_class":"legacy_patient_contaminated","limitations":["three patient IDs cross splits","13 rows participate in cross-split patient contamination","historical operational evidence only"],"metric_contract":"clean_v2_legacy_locked_panel_v1","model_id":"Loop170-EGE-UNet","partition":"test_v2","robust_bf1":0.0817,"robust_dice":0.8616,"robust_iou":0.7809,"scientific_comparable":false,"seed_count":1,"source_ids":["loop170_locked_panel","loop170_bootstrap"]},{"clean_dice":0.8962,"dataset_version":"Clean-v2","display_name":"IMP-SegFormer-B3","evidence_class":"legacy_patient_contaminated","limitations":["three patient IDs cross splits","13 rows participate in cross-split patient contamination","historical operational evidence only"],"metric_contract":"clean_v2_legacy_locked_panel_v1","model_id":"Loop170-IMP","partition":"test_v2","robust_bf1":0.424,"robust_dice":0.8913,"robust_iou":0.8224,"scientific_comparable":false,"seed_count":1,"source_ids":["loop170_locked_panel","loop170_bootstrap"]},{"clean_dice":0.8968,"dataset_version":"Clean-v2","display_name":"Vanilla SegFormer-B3","evidence_class":"legacy_patient_contaminated","limitations":["three patient IDs cross splits","13 rows participate in cross-split patient contamination","historical operational evidence only"],"metric_contract":"clean_v2_legacy_locked_panel_v1","model_id":"Loop170-Vanilla","partition":"test_v2","robust_bf1":0.3969,"robust_dice":0.8897,"robust_iou":0.8179,"scientific_comparable":false,"seed_count":1,"source_ids":["loop170_locked_panel","loop170_bootstrap"]},{"clean_dice":0.8923,"dataset_version":"Clean-v2","display_name":"nnU-Net v2","evidence_class":"legacy_patient_contaminated","limitations":["three patient IDs cross splits","13 rows participate in cross-split patient contamination","historical operational evidence only"],"metric_contract":"clean_v2_legacy_locked_panel_v1","model_id":"Loop170-nnU-Net-v2","partition":"test_v2","robust_bf1":0.5381,"robust_dice":0.8911,"robust_iou":0.8246,"scientific_comparable":false,"seed_count":1,"source_ids":["loop170_locked_panel","loop170_bootstrap"]}],"registry_sha256":"f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32","schema_version":"imp.evidence_registry.v1","scientific_sota_status":"not_established","sources":[{"path":".artifacts/preprocessing_search/current_bdou_loop191_raw_rater_uncertainty_report.json","sha256":"d1a0d964803546eb95d62609af8dc39cce915a653e306defc6bae9c35cc387d6","source_id":"loop191_report"},{"path":".artifacts/preprocessing_search/current_bdou_loop192_nnunet_clean_v3_report.json","sha256":"852a67544ad34d64139dbf913e740e4866e5f72dfe10a1d89d4f573f1711d064","source_id":"loop192_report"},{"path":".artifacts/preprocessing_search/current_bdou_loop206_final_closure_report.json","sha256":"7d6fcd61259a81f4696e34b58c6fdee3529584dac8b8361b7c38f2198c4aa9bb","source_id":"loop206_report"},{"path":"reports/paper_loop170_overleaf/tables/locked_panel_results.tex","sha256":"b77febbcacb7f0bb8b0e4fefc07869875bb1b089bf02b405bcec91b2a511bdb5","source_id":"loop170_locked_panel"},{"path":"reports/paper_loop170_overleaf/tables/bootstrap_deltas.tex","sha256":"34cf1541fcbb43d852dffb8b9897f90b28f32910805430b519a03b940d5e5584","source_id":"loop170_bootstrap"}]}
+{
+  "claim_policy": {
+    "clinical_use": false,
+    "cross_protocol_ranking_allowed": false,
+    "protected_test_claim_allowed": false
+  },
+  "comparisons": [
+    {
+      "ci95": null,
+      "comparison_id": "L192-minus-L191",
+      "evidence_class": "protected_validation",
+      "limitations": [
+        "single-run point estimates",
+        "no paired confidence interval"
+      ],
+      "metric": "robust_dice",
+      "point_delta": 0.006047228312233588,
+      "scientific_comparable": true,
+      "source_ids": [
+        "loop191_report",
+        "loop192_report"
+      ]
+    },
+    {
+      "ci95": [
+        -0.049121296024302145,
+        -0.015627817085354864
+      ],
+      "comparison_id": "L206-contour-minus-control",
+      "evidence_class": "train_screen",
+      "metric": "robust_dice",
+      "point_delta": -0.03129624395473221,
+      "scientific_comparable": false,
+      "source_ids": [
+        "loop206_report"
+      ]
+    },
+    {
+      "ci95": [
+        -0.003,
+        0.0035
+      ],
+      "comparison_id": "Loop170-IMP-minus-nnU-Net-v2",
+      "evidence_class": "legacy_patient_contaminated",
+      "metric": "robust_dice",
+      "point_delta": 0.0002,
+      "scientific_comparable": false,
+      "source_ids": [
+        "loop170_bootstrap"
+      ]
+    }
+  ],
+  "dataset": {
+    "clean_v2_cross_split_patient_ids": 3,
+    "clean_v2_cross_split_rows": 13,
+    "clean_v3_rows": 2869,
+    "clean_v3_split_counts": {
+      "test": 430,
+      "train": 2008,
+      "validation": 431
+    }
+  },
+  "observations": [
+    {
+      "dataset_version": "Clean-v3",
+      "display_name": "IMP-SegFormer-B3",
+      "evidence_class": "protected_validation",
+      "limitations": [
+        "single-run validation point estimate",
+        "protected test-v3 not opened",
+        "older metric geometry contract"
+      ],
+      "metric_contract": "legacy_nearest_384_t2",
+      "model_id": "L191-C0-clean-v3-IMP-control",
+      "partition": "validation",
+      "robust_bf1": 0.4145296468027299,
+      "robust_dice": 0.895870479294128,
+      "robust_iou": 0.8276836720163411,
+      "robust_precision": 0.9087624468161243,
+      "robust_recall": 0.9127938055574955,
+      "scientific_comparable": true,
+      "seed_count": 1,
+      "source_ids": [
+        "loop191_report"
+      ]
+    },
+    {
+      "dataset_version": "Clean-v3",
+      "display_name": "nnU-Net v2",
+      "evidence_class": "protected_validation",
+      "limitations": [
+        "single-run validation point estimate",
+        "protected test-v3 not opened",
+        "256x256 prediction resized to 384x384 metric canvas"
+      ],
+      "metric_contract": "legacy_nearest_384_t2",
+      "model_id": "L192-nnUNet-v2-raw-100ep",
+      "partition": "validation",
+      "robust_bf1": 0.43691577678397314,
+      "robust_dice": 0.9019177076063616,
+      "robust_iou": 0.8353954025733779,
+      "robust_precision": 0.9055585401108206,
+      "robust_recall": 0.9246376021289167,
+      "scientific_comparable": true,
+      "seed_count": 1,
+      "source_ids": [
+        "loop192_report"
+      ]
+    },
+    {
+      "bootstrap_resamples": 10000,
+      "corruption_count": 3,
+      "dataset_version": "Clean-v3",
+      "display_name": "Loop206 contour channel minus zero-channel control",
+      "evidence_class": "train_screen",
+      "group_count": 76,
+      "limitations": [
+        "train-screen evidence only",
+        "Clean-v3 validation, test-v3, and PH2 remained sealed",
+        "negative result applies only to the tested contour channel"
+      ],
+      "metric_contract": "loop206_train_screen_three_corruptions_t2",
+      "model_id": "L206-contour-vs-control",
+      "partition": "train_screen",
+      "robust_bf1_ci95": [
+        -0.030758654691150956,
+        0.0010438469457382654
+      ],
+      "robust_bf1_delta": -0.01465831334754726,
+      "robust_dice_ci95": [
+        -0.049121296024302145,
+        -0.015627817085354864
+      ],
+      "robust_dice_delta": -0.03129624395473221,
+      "scientific_comparable": false,
+      "seed_count": 3,
+      "source_ids": [
+        "loop206_report"
+      ]
+    },
+    {
+      "clean_dice": 0.8617,
+      "dataset_version": "Clean-v2",
+      "display_name": "EGE-UNet",
+      "evidence_class": "legacy_patient_contaminated",
+      "limitations": [
+        "three patient IDs cross splits",
+        "13 rows participate in cross-split patient contamination",
+        "historical operational evidence only"
+      ],
+      "metric_contract": "clean_v2_legacy_locked_panel_v1",
+      "model_id": "Loop170-EGE-UNet",
+      "partition": "test_v2",
+      "robust_bf1": 0.0817,
+      "robust_dice": 0.8616,
+      "robust_iou": 0.7809,
+      "scientific_comparable": false,
+      "seed_count": 1,
+      "source_ids": [
+        "loop170_locked_panel",
+        "loop170_bootstrap"
+      ]
+    },
+    {
+      "clean_dice": 0.8962,
+      "dataset_version": "Clean-v2",
+      "display_name": "IMP-SegFormer-B3",
+      "evidence_class": "legacy_patient_contaminated",
+      "limitations": [
+        "three patient IDs cross splits",
+        "13 rows participate in cross-split patient contamination",
+        "historical operational evidence only"
+      ],
+      "metric_contract": "clean_v2_legacy_locked_panel_v1",
+      "model_id": "Loop170-IMP",
+      "partition": "test_v2",
+      "robust_bf1": 0.424,
+      "robust_dice": 0.8913,
+      "robust_iou": 0.8224,
+      "scientific_comparable": false,
+      "seed_count": 1,
+      "source_ids": [
+        "loop170_locked_panel",
+        "loop170_bootstrap"
+      ]
+    },
+    {
+      "clean_dice": 0.8968,
+      "dataset_version": "Clean-v2",
+      "display_name": "Vanilla SegFormer-B3",
+      "evidence_class": "legacy_patient_contaminated",
+      "limitations": [
+        "three patient IDs cross splits",
+        "13 rows participate in cross-split patient contamination",
+        "historical operational evidence only"
+      ],
+      "metric_contract": "clean_v2_legacy_locked_panel_v1",
+      "model_id": "Loop170-Vanilla",
+      "partition": "test_v2",
+      "robust_bf1": 0.3969,
+      "robust_dice": 0.8897,
+      "robust_iou": 0.8179,
+      "scientific_comparable": false,
+      "seed_count": 1,
+      "source_ids": [
+        "loop170_locked_panel",
+        "loop170_bootstrap"
+      ]
+    },
+    {
+      "clean_dice": 0.8923,
+      "dataset_version": "Clean-v2",
+      "display_name": "nnU-Net v2",
+      "evidence_class": "legacy_patient_contaminated",
+      "limitations": [
+        "three patient IDs cross splits",
+        "13 rows participate in cross-split patient contamination",
+        "historical operational evidence only"
+      ],
+      "metric_contract": "clean_v2_legacy_locked_panel_v1",
+      "model_id": "Loop170-nnU-Net-v2",
+      "partition": "test_v2",
+      "robust_bf1": 0.5381,
+      "robust_dice": 0.8911,
+      "robust_iou": 0.8246,
+      "scientific_comparable": false,
+      "seed_count": 1,
+      "source_ids": [
+        "loop170_locked_panel",
+        "loop170_bootstrap"
+      ]
+    }
+  ],
+  "registry_sha256": "f6ed2eace90c49ee1b9f0c122e736920791b6301035bf8905c6a0ce27b755f32",
+  "release_manifest_sha256": "435606d5adc296be57405c65a9c725af3dff96c15f9aabf7ac0924d06387a264",
+  "schema_version": "imp.evidence_registry.v1",
+  "scientific_sota_status": "not_established",
+  "sources": [
+    {
+      "path": ".artifacts/preprocessing_search/current_bdou_loop191_raw_rater_uncertainty_report.json",
+      "sha256": "d1a0d964803546eb95d62609af8dc39cce915a653e306defc6bae9c35cc387d6",
+      "source_id": "loop191_report"
+    },
+    {
+      "path": ".artifacts/preprocessing_search/current_bdou_loop192_nnunet_clean_v3_report.json",
+      "sha256": "852a67544ad34d64139dbf913e740e4866e5f72dfe10a1d89d4f573f1711d064",
+      "source_id": "loop192_report"
+    },
+    {
+      "path": ".artifacts/preprocessing_search/current_bdou_loop206_final_closure_report.json",
+      "sha256": "7d6fcd61259a81f4696e34b58c6fdee3529584dac8b8361b7c38f2198c4aa9bb",
+      "source_id": "loop206_report"
+    },
+    {
+      "path": "reports/paper_loop170_overleaf/tables/locked_panel_results.tex",
+      "sha256": "b77febbcacb7f0bb8b0e4fefc07869875bb1b089bf02b405bcec91b2a511bdb5",
+      "source_id": "loop170_locked_panel"
+    },
+    {
+      "path": "reports/paper_loop170_overleaf/tables/bootstrap_deltas.tex",
+      "sha256": "34cf1541fcbb43d852dffb8b9897f90b28f32910805430b519a03b940d5e5584",
+      "source_id": "loop170_bootstrap"
+    }
+  ]
+}
