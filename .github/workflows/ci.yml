@@ -37,7 +37,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             latexmk poppler-utils texlive-bibtex-extra texlive-fonts-recommended \
-            texlive-latex-base texlive-latex-extra
+            texlive-latex-base texlive-latex-extra texlive-luatex
           test -x "$IMP_PDFINFO_EXE"
           test ! -L "$IMP_PDFINFO_EXE"
 
@@ -69,7 +69,7 @@ jobs:
         run: |
           set -euo pipefail
           cd paper/clean_v3_loop206
-          build_command='latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex'
+          build_command='latexmk -lualatex -interaction=nonstopmode -halt-on-error main.tex'
           latexmk -C main.tex
           rm -f main.pdf
           $build_command | tee ../../ci-receipts/latex-build.log
@@ -105,7 +105,7 @@ jobs:
               "built_pdf_sha256": hashlib.sha256(data).hexdigest(),
               "pages": int(pages.group(1)),
               "bytes": len(data),
-              "build_command": "latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex",
+              "build_command": "latexmk -lualatex -interaction=nonstopmode -halt-on-error main.tex",
               "status": "passed",
           }
           artifact_manifest = {

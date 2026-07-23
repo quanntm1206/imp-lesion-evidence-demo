@@ -55,7 +55,7 @@ Rebuild the paper after the evidence audit passes:
 
 ```powershell
 Push-Location paper/clean_v3_loop206
-latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex
+latexmk -lualatex -interaction=nonstopmode -halt-on-error main.tex
 Pop-Location
 ```
 

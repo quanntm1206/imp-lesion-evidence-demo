@@ -272,7 +272,8 @@ def test_teacher_demo_guide_is_linked_and_self_deployable() -> None:
     assert "Compare-Object" in guide
     assert ".Replace('\\', '/')" in guide
     assert "Get-ChildItem -LiteralPath $ArtifactRoot -Force -Recurse -File" in guide
-    assert "git switch --detach submission-2026-07-23" in guide
+    assert "git switch --detach submission-2026-07-23-v2" in guide
+    assert "git switch --detach submission-2026-07-23\n" not in guide
     assert "repository-overlay" not in guide
     assert "@('.artifacts', 'demo_runtime')" in guide
     assert "Copy-Item -LiteralPath $Source -Destination $Destination -Recurse" in guide

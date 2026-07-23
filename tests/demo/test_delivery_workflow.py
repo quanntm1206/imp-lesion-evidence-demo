@@ -42,9 +42,10 @@ def test_windows_bootstrap_preserves_cuda_overlay_and_runs_delivery_checks() -> 
     assert "audit_clean_v3_paper.py" in script
     assert "--source-verification registry-only" in script
     assert "latexmk" in script
-    assert "pdflatex" in script and "bibtex" in script
+    assert "lualatex" in script and "bibtex" in script
+    assert "pdflatex" not in script
     assert "$PaperBuilt = $false" in script
-    assert "latexmk failed; trying pdflatex/bibtex fallback" in script
+    assert "latexmk failed; trying lualatex/bibtex fallback" in script
     assert "No TeX toolchain found" in script
     sync_invocations = re.findall(r"^\s*uv sync\b.*$", script, flags=re.MULTILINE)
     assert len(sync_invocations) == 2
@@ -77,7 +78,9 @@ def test_ci_is_cpu_only_reproducible_and_uploads_receipts() -> None:
     assert "apt-get install" in commands
     assert "texlive" in commands
     assert "latexmk -C" in commands
-    assert "latexmk -pdf" in commands
+    assert "texlive-luatex" in commands
+    assert "latexmk -lualatex" in commands
+    assert "latexmk -pdf" not in commands
     assert "pdfinfo" in commands
     assert 'test -x "$IMP_PDFINFO_EXE"' in commands
     assert 'test ! -L "$IMP_PDFINFO_EXE"' in commands
@@ -105,6 +108,7 @@ def test_ci_is_cpu_only_reproducible_and_uploads_receipts() -> None:
     assert "paper/clean_v3_loop206/artifact_manifest.json" not in upload_paths
     assert "ci-receipts/paper/artifact_manifest.json" in upload_paths
     assert any("receipt" in str(step.get("with", {}).get("path", "")) for step in job["steps"])
+    assert "latexmk -lualatex" in _read("README.md")
 
 
 def test_runbook_and_readme_define_private_two_machine_handoff() -> None:

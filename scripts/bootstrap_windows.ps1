@@ -92,32 +92,32 @@ try {
         if (Get-Command latexmk -ErrorAction SilentlyContinue) {
             $PreviousErrorPreference = $ErrorActionPreference
             $ErrorActionPreference = 'Continue'
-            latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex
+            latexmk -lualatex -interaction=nonstopmode -halt-on-error main.tex
             $LatexmkExitCode = $LASTEXITCODE
             $ErrorActionPreference = $PreviousErrorPreference
             if ($LatexmkExitCode -eq 0) {
                 $PaperBuilt = $true
             } else {
-                Write-Warning "latexmk failed; trying pdflatex/bibtex fallback (exit $LatexmkExitCode)"
+                Write-Warning "latexmk failed; trying lualatex/bibtex fallback (exit $LatexmkExitCode)"
             }
         }
 
-        if (-not $PaperBuilt -and (Get-Command pdflatex -ErrorAction SilentlyContinue) -and (Get-Command bibtex -ErrorAction SilentlyContinue)) {
-            pdflatex -interaction=nonstopmode -halt-on-error main.tex
-            Assert-LastExitCode 'first pdflatex pass'
+        if (-not $PaperBuilt -and (Get-Command lualatex -ErrorAction SilentlyContinue) -and (Get-Command bibtex -ErrorAction SilentlyContinue)) {
+            lualatex -interaction=nonstopmode -halt-on-error main.tex
+            Assert-LastExitCode 'first lualatex pass'
             bibtex main
             Assert-LastExitCode 'bibtex pass'
-            pdflatex -interaction=nonstopmode -halt-on-error main.tex
-            Assert-LastExitCode 'second pdflatex pass'
-            pdflatex -interaction=nonstopmode -halt-on-error main.tex
-            Assert-LastExitCode 'final pdflatex pass'
+            lualatex -interaction=nonstopmode -halt-on-error main.tex
+            Assert-LastExitCode 'second lualatex pass'
+            lualatex -interaction=nonstopmode -halt-on-error main.tex
+            Assert-LastExitCode 'final lualatex pass'
             $PaperBuilt = $true
         }
 
         if (-not $PaperBuilt -and $null -ne $LatexmkExitCode) {
-            throw "latexmk failed with exit code $LatexmkExitCode and pdflatex/bibtex fallback is unavailable. Install Perl for latexmk or install both fallback commands."
+            throw "latexmk failed with exit code $LatexmkExitCode and lualatex/bibtex fallback is unavailable. Install Perl for latexmk or install both fallback commands."
         } elseif (-not $PaperBuilt) {
-            throw 'No TeX toolchain found. Install latexmk, or install both pdflatex and bibtex, then rerun this script.'
+            throw 'No TeX toolchain found. Install latexmk, or install both lualatex and bibtex, then rerun this script.'
         }
     } finally {
         Pop-Location
