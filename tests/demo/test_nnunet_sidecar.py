@@ -611,12 +611,8 @@ def test_public_manifest_pins_recovered_bundle_without_private_paths() -> None:
 def test_container_uses_digest_pinned_cuda_base() -> None:
     sidecar_root = Path(__file__).parents[2] / "sidecar" / "nnunet"
     dockerfile = (sidecar_root / "Dockerfile").read_text(encoding="utf-8")
-    plan = (
-        Path(__file__).parents[2]
-        / "docs"
-        / "superpowers"
-        / "plans"
-        / "2026-07-21-dual-live-demo.md"
+    launcher = (
+        Path(__file__).parents[2] / "scripts" / "demo" / "run_sidecar.ps1"
     ).read_text(encoding="utf-8")
 
     assert (
@@ -629,7 +625,7 @@ def test_container_uses_digest_pinned_cuda_base() -> None:
     assert "useradd --uid 65532" in dockerfile
     assert "USER sidecar:sidecar" in dockerfile
     assert "NNUNET_BIND_HOST=0.0.0.0" in dockerfile
-    assert "127.0.0.1:7862:7862" in plan
+    assert "127.0.0.1:7862:7862" in launcher
 
     for source, destination in (
         (

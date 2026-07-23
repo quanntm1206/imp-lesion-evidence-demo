@@ -2972,11 +2972,10 @@ def test_recovery_verifier_cli_avoids_inline_argv_and_cleans_owned_report(
     assert not list(bundle.glob(".verification-report*.json"))
 
 
-def test_recovery_plan_passes_explicit_trusted_python() -> None:
-    plan = _read("docs/superpowers/plans/2026-07-21-dual-live-demo.md")
-    argument = "-PythonExe '<PYTHON_EXE>'"
-
-    assert plan.count(argument) >= 2
+def test_recovery_runbook_passes_explicit_trusted_python() -> None:
+    runbook = _read("docs/runbooks/demo-operations.md")
+    assert "recover_nnunet_artifacts.ps1" in runbook
+    assert "-PythonExe '.venv-win\\Scripts\\python.exe'" in runbook
 
 
 def test_recovery_container_arguments_lock_mounts_and_image() -> None:
@@ -3299,65 +3298,6 @@ def test_recovery_routes_linux_commands_through_locked_context() -> None:
         position = script.index(token)
         nearby = script[max(0, position - 220) : position + 220]
         assert "ContextPrefix" in nearby
-
-
-def test_recovery_design_documents_locked_inspection_fallback() -> None:
-    design = _read("docs/superpowers/specs/2026-07-21-dual-live-demo-design.md").lower()
-
-    for token in (
-        "system distribution",
-        "preferred",
-        "`docker-desktop`",
-        "root-only",
-        "fallback",
-        "preflight",
-    ):
-        assert token in design
-
-
-def test_recovery_design_documents_container_parser_proof() -> None:
-    design = _read("docs/superpowers/specs/2026-07-21-dual-live-demo-design.md").lower()
-
-    for token in (
-        "container parser",
-        "registered vhd",
-        "read-only bind",
-        "no block mount",
-        "journal replay",
-        "pinned artifact hashes",
-        "reconstructed",
-        "checkpoint load",
-    ):
-        assert token in design
-
-
-def test_task4_docs_replace_unavailable_original_output_replay_gate() -> None:
-    documents = tuple(
-        re.sub(r"\s+", " ", _read(path).lower())
-        for path in (
-            "docs/superpowers/specs/2026-07-21-dual-live-demo-design.md",
-            "docs/superpowers/plans/2026-07-21-dual-live-demo.md",
-        )
-    )
-    required_contract = (
-        "exact artifact hashes",
-        "reconstructed dependency lock",
-        "cuda/api identity",
-        "checkpoint load",
-        "same-current-runtime determinism",
-        "one public input",
-        "two materially different public inputs",
-        "identical dimensions",
-        "distinct input hashes",
-        "distinct current output hashes",
-        "does not prove original-runtime equivalence",
-    )
-
-    for document in documents:
-        for token in required_contract:
-            assert token in document
-        assert "plus output replay before public launch" not in document
-        assert "recorded-output replay remain acceptance gates" not in document
 
 
 def test_recovery_marks_attempts_before_mutating_commands() -> None:

@@ -45,13 +45,13 @@ git clone https://github.com/quanntm1206/imp-lesion-evidence-demo.git
 Set-Location imp-lesion-evidence-demo
 git switch main
 git fetch --tags
-git switch --detach submission-2026-07-23-v2
+git switch --detach submission-2026-07-23-v3
 git rev-parse HEAD
 ```
 
 Repository phải có remote
 `https://github.com/quanntm1206/imp-lesion-evidence-demo.git`. Tag
-`submission-2026-07-23-v2` khóa đúng snapshot đã kiểm tra; ghi lại commit SHA để
+`submission-2026-07-23-v3` khóa đúng snapshot đã kiểm tra; ghi lại commit SHA để
 báo lại nhóm nếu có lỗi.
 
 ## 4. Cài môi trường demo

@@ -1140,18 +1140,6 @@ def test_cli_returns_nonzero_and_writes_path_free_failure_receipt(tmp_path: Path
     assert str(tmp_path) not in payload
 
 
-def test_task6_readiness_audit_keeps_p1_blocked() -> None:
-    audit = ROOT / "reports/paper_revision/manuscript_readiness_audit.md"
-
-    assert audit.is_file()
-    text = audit.read_text(encoding="utf-8")
-
-    assert "16/33" in text
-    assert "Hard blockers" in text
-    assert "Venue/template status: unverified" in text
-    assert "P1 scientific rerun: BLOCKED" in text
-
-
 def test_task6_live_evidence_classification_satisfies_claim_audit() -> None:
     errors: list[str] = []
 
@@ -1177,12 +1165,8 @@ def test_task4_browser_and_tunnel_observations_are_historical_not_current_releas
     assert "Neither original-runtime equivalence" in reproducibility
 
 
-def test_limitations_and_readiness_audit_mark_task4_browser_evidence_superseded() -> None:
+def test_limitations_mark_task4_browser_evidence_superseded() -> None:
     limitations = (PAPER / "sections/08_limitations_ethics.tex").read_text(encoding="utf-8")
-    readiness = (ROOT / "reports/paper_revision/manuscript_readiness_audit.md").read_text(
-        encoding="utf-8"
-    )
-    for text in (limitations, readiness):
-        assert "historical/superseded" in text
-        assert "Task 4" in text
-        assert "unverified/blocked" in text
+    assert "historical/superseded" in limitations
+    assert "Task 4" in limitations
+    assert "unverified/blocked" in limitations

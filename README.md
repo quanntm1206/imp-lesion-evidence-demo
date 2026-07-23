@@ -145,7 +145,7 @@ with exit code `2`; this is the expected pending state, not a scientific result.
 - Paper PDF: [`paper/clean_v3_loop206/main.pdf`](paper/clean_v3_loop206/main.pdf)
 - Vietnamese talk script: [`docs/presentation/defense-presentation-script-vi.md`](docs/presentation/defense-presentation-script-vi.md)
 - Lecturer Q&A: [`docs/presentation/lecturer-questions-and-answers-vi.md`](docs/presentation/lecturer-questions-and-answers-vi.md)
-- Evidence status: [`reports/paper_revision/manuscript_readiness_audit.md`](reports/paper_revision/manuscript_readiness_audit.md)
+- Evidence status: [`release/imp_release_manifest.json`](release/imp_release_manifest.json), [`paper/clean_v3_loop206/artifact_manifest.json`](paper/clean_v3_loop206/artifact_manifest.json), and [`outputs/imp-lesion-evidence-defense-manifest.json`](outputs/imp-lesion-evidence-defense-manifest.json)
 
 ## Artifact policy
 

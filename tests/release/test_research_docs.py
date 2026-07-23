@@ -11,6 +11,37 @@ def _read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
+def test_public_tree_omits_agent_artifacts_and_legacy_configs() -> None:
+    internal_paths = (
+        ".superpowers/sdd/completion-task1-report.md",
+        "docs/superpowers/plans/2026-07-20-evidence-first-paper-demo-rescue.md",
+        "docs/superpowers/plans/2026-07-21-dual-live-demo.md",
+        "docs/superpowers/plans/2026-07-21-interactive-research-deck.md",
+        "docs/superpowers/specs/2026-07-20-evidence-first-paper-demo-rescue-design.md",
+        "docs/superpowers/specs/2026-07-21-dual-live-demo-design.md",
+        "docs/superpowers/specs/2026-07-21-interactive-research-deck-design.md",
+        "docs/presentation/2026-07-23-professor-p-fast-lane-audit.md",
+        "docs/presentation/professor-audit-report.md",
+        "docs/presentation/presenter-s-transcript.md",
+        "docs/presentation/defense-question-bank.md",
+        "reports/paper_revision/manuscript_readiness_audit.md",
+    )
+    assert [path for path in internal_paths if (ROOT / path).is_file()] == []
+
+    public_configs = {
+        path.relative_to(ROOT).as_posix()
+        for path in (ROOT / "configs").rglob("*.yaml")
+    }
+    assert public_configs == {
+        "configs/demo/loop206_live.yaml",
+        "configs/loop206/l206_control_train_screen_pilot20.yaml",
+    }
+
+    gitignore = _read(".gitignore")
+    assert "/.superpowers/" in gitignore
+    assert "/docs/superpowers/" in gitignore
+
+
 def test_citation_identifies_paper_and_both_authors() -> None:
     citation = yaml.safe_load(_read("CITATION.cff"))
 
@@ -272,8 +303,8 @@ def test_teacher_demo_guide_is_linked_and_self_deployable() -> None:
     assert "Compare-Object" in guide
     assert ".Replace('\\', '/')" in guide
     assert "Get-ChildItem -LiteralPath $ArtifactRoot -Force -Recurse -File" in guide
-    assert "git switch --detach submission-2026-07-23-v2" in guide
-    assert "git switch --detach submission-2026-07-23\n" not in guide
+    assert "git switch --detach submission-2026-07-23-v3" in guide
+    assert "git switch --detach submission-2026-07-23-v2" not in guide
     assert "repository-overlay" not in guide
     assert "@('.artifacts', 'demo_runtime')" in guide
     assert "Copy-Item -LiteralPath $Source -Destination $Destination -Recurse" in guide

@@ -13,6 +13,7 @@
 
 # Agent and verification scratch directories
 /.superpowers/
+/docs/superpowers/
 /.dg-*/
 /.final-verify-*/
 /.p7*/

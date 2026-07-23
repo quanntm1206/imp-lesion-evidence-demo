@@ -45,7 +45,7 @@ def test_tracked_runtime_files_have_no_machine_specific_absolute_paths() -> None
     tracked = subprocess.check_output(
         ["git", "ls-files", "-z"], cwd=ROOT
     ).decode("utf-8").split("\0")
-    excluded = ("tests/", "docs/superpowers/plans/", "docs/superpowers/specs/")
+    excluded = ("tests/",)
     pattern = re.compile(
         r"(?<![A-Za-z0-9])(?:[A-Za-z]:[\\/]|/home/[^/\s]+(?:[/\\]|$)|/mnt/[A-Za-z](?:[/\\]|$))"
     )
