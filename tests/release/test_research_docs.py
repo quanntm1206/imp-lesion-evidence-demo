@@ -104,6 +104,27 @@ def test_reproducibility_doc_distinguishes_validation_from_reproduction() -> Non
     assert all(term in document for term in required)
 
 
+def test_continue_handoff_is_public_safe_and_restorable() -> None:
+    document = _read("CONTINUE.md")
+    normalized = " ".join(document.split())
+
+    required = (
+        "git switch --track -c continue origin/continue",
+        "scripts/bootstrap_windows.ps1",
+        "submission-2026-07-23-v3",
+        "sha256-manifest.json",
+        "DEMO_DEPLOYMENT_GUIDE.md",
+        "pending/unverified",
+        "0/6",
+        "contract-only",
+        "A pull alone cannot run real inference",
+    )
+    assert all(term in normalized for term in required)
+    assert "CONTINUE.md" in _read("README.md")
+    assert not re.search(r"(?i)trycloudflare\.com", document)
+    assert not re.search(r"(?<![A-Za-z])[A-Za-z]:[\\/]", document)
+
+
 def test_documented_paper_audits_supply_required_receipts() -> None:
     document = _read("docs/reproducibility.md")
 

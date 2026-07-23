@@ -34,6 +34,11 @@ remain audit records, not substitutes for prospective RQ1-v2 admission.
 
 ## Five-minute setup
 
+To resume future development from the preserved checkpoint, use the
+[`continue` branch handoff](CONTINUE.md). It lists the restore commands,
+remaining scientific work, and the private artifacts that require a separate
+hash-verified backup before deleting a workstation.
+
 Prerequisites: Git, `uv`, Python 3.12, and a TeX toolchain for the paper. From a
 clean Windows clone:
 

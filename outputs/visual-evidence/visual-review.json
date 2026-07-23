@@ -1,0 +1,37 @@
+{
+  "schema": "imp.presentation.visual-review/v1",
+  "visual_qa": "pass",
+  "slide_count": 17,
+  "renderers": {
+    "pptx": "@oai/artifact-tool 2.8.24",
+    "pdf": "PowerPoint 16.0 export; Poppler pdftoppm 26.05.0 raster"
+  },
+  "checks": [
+    {"slide": 1, "pptx": "pptx/slide-1.png", "pdf": "pdf/page-01.png", "verdict": "pass", "note": "Title hierarchy, fields, and footer clear."},
+    {"slide": 2, "pptx": "pptx/slide-2.png", "pdf": "pdf/page-02.png", "verdict": "pass", "note": "Leakage metrics and bullets fully visible."},
+    {"slide": 3, "pptx": "pptx/slide-3.png", "pdf": "pdf/page-03.png", "verdict": "pass", "note": "RQ split balanced; no clipping."},
+    {"slide": 4, "pptx": "pptx/slide-4.png", "pdf": "pdf/page-04.png", "verdict": "pass", "note": "Six pipeline modules aligned and legible."},
+    {"slide": 5, "pptx": "pptx/slide-5.png", "pdf": "pdf/page-05.png", "verdict": "pass", "note": "Data partition labels and Back control clear."},
+    {"slide": 6, "pptx": "pptx/slide-6.png", "pdf": "pdf/page-06.png", "verdict": "pass", "note": "System comparison columns and caution banner clear."},
+    {"slide": 7, "pptx": "pptx/slide-7.png", "pdf": "pdf/page-07.png", "verdict": "pass", "note": "Metric bars, values, and inference limits clear."},
+    {"slide": 8, "pptx": "pptx/slide-8.png", "pdf": "pdf/page-08.png", "verdict": "pass", "note": "Matched design diagram and group counts clear."},
+    {"slide": 9, "pptx": "pptx/slide-9.png", "pdf": "pdf/page-09.png", "verdict": "pass", "note": "Caption moved above Back control; plot and gate text clear."},
+    {"slide": 10, "pptx": "pptx/slide-10.png", "pdf": "pdf/page-10.png", "verdict": "pass", "note": "Dense source raster removed; two native fixed-cache evidence cards and lane/model IDs legible."},
+    {"slide": 11, "pptx": "pptx/slide-11.png", "pdf": "pdf/page-11.png", "verdict": "pass", "note": "Leakage challenge triad fully visible."},
+    {"slide": 12, "pptx": "pptx/slide-12.png", "pdf": "pdf/page-12.png", "verdict": "pass", "note": "Fairness challenge triad fully visible."},
+    {"slide": 13, "pptx": "pptx/slide-13.png", "pdf": "pdf/page-13.png", "verdict": "pass", "note": "Uncertainty challenge triad fully visible."},
+    {"slide": 14, "pptx": "pptx/slide-14.png", "pdf": "pdf/page-14.png", "verdict": "pass", "note": "Demo-trust challenge triad fully visible."},
+    {"slide": 15, "pptx": "pptx/slide-15.png", "pdf": "pdf/page-15.png", "verdict": "pass", "note": "Reproducibility challenge triad fully visible."},
+    {"slide": 16, "pptx": "pptx/slide-16.png", "pdf": "pdf/page-16.png", "verdict": "pass", "note": "Three reproducibility columns and sealed-test line clear."},
+    {"slide": 17, "pptx": "pptx/slide-17.png", "pdf": "pdf/page-17.png", "verdict": "pass", "note": "Takeaways and next-experiment banner clear."}
+  ],
+  "automated_overflow": "pass: slides_test.py reported no overflow",
+  "fixes": {
+    "navigation": "Package gate now resolves each OOXML shape relationship; exact targets 5,6,6,7,8,10; Back only 5-10 to slide 4; rejects Back 1-4 and 11-17.",
+    "slide_10": "Removed unreadable five-column raster; native text preserves sample IDs, control/candidate evidence scope, illustrative boundary, and authorized-GT boundary."
+  },
+  "concerns": [
+    "PowerPoint reports only major version 16.0.",
+    "HTML browser-state QA is outside this package-only task; structural self-containment tests pass."
+  ]
+}
