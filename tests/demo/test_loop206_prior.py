@@ -724,10 +724,14 @@ def test_preflight_failure_writes_structured_failed_receipt(tmp_path: Path) -> N
 
 
 def test_frozen_runtime_config_resolves_exact_contract() -> None:
+    frozen_config = "configs/loop206/l206_control_train_screen_pilot20.yaml"
     payload = prior_module._runtime_payload(
         image_size=(384, 384),
-        frozen_config="configs/loop206/l206_control_train_screen_pilot20.yaml",
+        frozen_config=frozen_config,
     )
     assert payload["project_seed"] == 206
     assert payload["views"] == ["clean", "low_contrast", "gaussian_noise"]
     assert payload["active_contour"]["name"] == "neutral_mid_30_s2"
+    assert prior_module._canonical_hash(prior_module.load_config(frozen_config)) == (
+        "95eba3167a841187da5fbbe6f5a5f93a406ff5fec97907829fcf7297dcf4e39a"
+    )

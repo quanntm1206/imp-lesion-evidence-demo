@@ -1,0 +1,134 @@
+# Flattened compatibility base for the hash-bound Loop206 pilot config.
+project:
+  name: robust-skin-lesion-segmentation-isic2018-2016-2017nl-segformer-mitb3-bdou-contrast-clahe-median-sog-p02-finetune-384
+  seed: 42
+
+data:
+  root: ${IMP_DATA_ROOT}/isic2018-task1
+  images_dir: images
+  masks_dir: masks
+  image_size: [384, 384]
+  train_split: 0.7
+  val_split: 0.15
+  test_split: 0.15
+  split_csv: data/splits/isic2018_2016_2017nl_train_split.csv
+  cache:
+    enabled: true
+    root: ${IMP_CACHE_ROOT}/dataset_resized/isic2018_2016_2017nl_384
+
+preprocessing:
+  normalize: true
+  clahe:
+    enabled: true
+    color_space: lab
+    clip_limit: 2.0
+    tile_grid_size: [8, 8]
+  filter:
+    type: median
+    kernel_size: 3
+  contrast_stretch:
+    enabled: true
+    lower_percentile: 1.0
+    upper_percentile: 99.0
+  color_constancy:
+    enabled: false
+  gamma:
+    enabled: false
+  hair_removal:
+    enabled: false
+  sharpen:
+    enabled: false
+  extra_channel:
+    enabled: false
+
+model:
+  name: segformer_mit
+  in_channels: 3
+  out_channels: 1
+  base_channels: 32
+  encoder_weights: imagenet
+  edge_aux: false
+  smp_encoder: mit_b3
+
+training:
+  device: cuda
+  epochs: 200
+  batch_size: 12
+  learning_rate: 0.00003
+  num_workers: 4
+  loss: bce_focal_tversky_bdou
+  checkpoint_dir: runs/isic2018-2016-2017nl-segformer-mitb3-bdou-contrast-clahe-median-sog-p02-finetune-w4v0cache-384-checkpoints
+  pin_memory: false
+  persistent_workers: true
+  prefetch_factor: 1
+  amp: true
+  tversky_alpha: 0.3
+  tversky_beta: 0.7
+  scheduler:
+    type: reduce_on_plateau
+    factor: 0.5
+    patience: 5
+    min_lr: 0.000001
+  early_stopping:
+    enabled: true
+    patience: 8
+    min_delta: 0.0001
+    monitor: val_dice
+    mode: max
+  focal_gamma: 0.75
+  bce_weight: 0.5
+  focal_tversky_weight: 1.0
+  init_checkpoint: runs/isic2018-2016-2017nl-segformer-mitb3-384-checkpoints/best.pt
+  init_strict: true
+  edge_aux_weight: 0.15
+  edge_kernel_size: 3
+  boundary_weight: 0.05
+  boundary_kernel_size: 3
+  checkpoint_metric: val_dice
+  checkpoint_mode: max
+  save_last: true
+  resume_checkpoint: ""
+  bdou_weight: 0.5
+  train_num_workers: 4
+  val_num_workers: 0
+  train_persistent_workers: true
+  val_persistent_workers: false
+  train_prefetch_factor: 1
+  val_prefetch_factor: 1
+
+postprocessing:
+  threshold: 0.5
+  close_kernel: 5
+  fill_holes: true
+  min_area_ratio: 0.005
+  keep_largest: true
+
+robustness:
+  corruptions:
+    low_brightness:
+      factor: 0.6
+    low_contrast:
+      factor: 0.5
+    gaussian_noise:
+      sigma: 0.05
+    gaussian_blur:
+      kernel_size: 5
+      sigma: 1.0
+    jpeg_compression:
+      quality: 40
+
+augmentation:
+  train_photometric:
+    enabled: true
+    brightness_range: [1.0, 1.0]
+    contrast_range: [1.0, 1.0]
+    gamma_range: [1.0, 1.0]
+    noise_sigma_range: [0.0, 0.0]
+    blur_probability: 0.0
+    blur_kernel_size: 3
+    jpeg_probability: 0.0
+    jpeg_quality_range: [30, 95]
+    shades_of_gray:
+      probability: 0.2
+      minkowski_norm: 6.0
+      gain_clip: [0.85, 1.15]

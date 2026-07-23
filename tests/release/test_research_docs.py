@@ -33,9 +33,16 @@ def test_public_tree_omits_agent_artifacts_and_legacy_configs() -> None:
         for path in (ROOT / "configs").rglob("*.yaml")
     }
     assert public_configs == {
+        "configs/isic2018_2016_2017nl_segformer_mitb3_bdou_contrast_clahe_median_sog_p02_finetune_384.yaml",
         "configs/demo/loop206_live.yaml",
         "configs/loop206/l206_control_train_screen_pilot20.yaml",
     }
+    for relative in public_configs:
+        payload = yaml.safe_load(_read(relative)) or {}
+        parent = payload.get("extends")
+        assert parent is None or (ROOT / parent).is_file(), (
+            f"{relative} extends missing public config {parent}"
+        )
 
     gitignore = _read(".gitignore")
     assert "/.superpowers/" in gitignore
