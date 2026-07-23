@@ -12,8 +12,8 @@
       "built_release_manifest_sha256": "435606d5adc296be57405c65a9c725af3dff96c15f9aabf7ac0924d06387a264",
       "current_release_manifest_sha256": "435606d5adc296be57405c65a9c725af3dff96c15f9aabf7ac0924d06387a264",
       "content_sha256": "14c322eb1d68194fc3cf45ddf27a4eda20ba8f51c0929094cd6942119498faa2",
-      "bytes": 253953,
-      "sha256": "fcd5f270c519e7de54b1dc8df18c7eeb05a893fdd485ca316c5721d737b68297"
+      "bytes": 251920,
+      "sha256": "32d2e4fcdb61b30592fc9618b1afd58f093a8ac2a6745d1226e15171c0bd843c"
     },
     {
       "path": "outputs/imp-lesion-evidence-defense.pdf",

@@ -38,18 +38,21 @@ cloudflared --version
 
 Nếu không dùng Cloudflare, lỗi ở lệnh `cloudflared --version` có thể bỏ qua.
 
-## 3. Clone đúng default branch
+## 3. Clone và pin đúng submission snapshot
 
 ```powershell
 git clone https://github.com/quanntm1206/imp-lesion-evidence-demo.git
 Set-Location imp-lesion-evidence-demo
 git switch main
+git fetch --tags
+git switch --detach submission-2026-07-23
 git rev-parse HEAD
 ```
 
 Repository phải có remote
-`https://github.com/quanntm1206/imp-lesion-evidence-demo.git` và branch
-`main`. Ghi lại commit SHA để báo lại nhóm nếu có lỗi.
+`https://github.com/quanntm1206/imp-lesion-evidence-demo.git`. Tag
+`submission-2026-07-23` khóa đúng snapshot đã kiểm tra; ghi lại commit SHA để
+báo lại nhóm nếu có lỗi.
 
 ## 4. Cài môi trường demo
 
@@ -71,7 +74,7 @@ Gửi commit SHA, GPU, driver và lỗi cho nhóm để tạo một runtime đã
 
 Nhận `sha256-manifest.json` qua kênh riêng, tách khỏi archive. Nếu nhận archive,
 kiểm SHA-256 của chính archive theo digest do nhóm gửi riêng trước khi giải nén.
-Chỉ giải nén vào một thư mục mới, rỗng; chưa chép `repository-overlay` vào clone.
+Chỉ giải nén vào một thư mục mới, rỗng; chưa chép artifact vào clone.
 Gói bàn giao tối thiểu phải tạo ra các đường dẫn sau:
 
 Hai entry bắt buộc là `demo_runtime/loop206_dataset_index.json` và bundle
@@ -138,8 +141,21 @@ if ($ClosureDiff) { throw 'Artifact package closure mismatch: missing or extra f
 'artifact_manifest=passed'
 ```
 
-Chỉ sau khi `artifact_manifest=passed`, chép `repository-overlay` vào clone. Sau
-đó trỏ ba biến môi trường tới file/root private đã kiểm tra:
+Chỉ sau khi `artifact_manifest=passed`, chép đúng hai root runtime vào clone.
+Lệnh dừng nếu destination đã tồn tại để tránh merge với cache cũ:
+
+```powershell
+$RepoRoot = (Resolve-Path -LiteralPath '.').Path
+foreach ($Relative in @('.artifacts', 'demo_runtime')) {
+  $Source = Join-Path $ArtifactRoot $Relative
+  $Destination = Join-Path $RepoRoot $Relative
+  if (-not (Test-Path -LiteralPath $Source -PathType Container)) { throw "Missing artifact root: $Relative" }
+  if (Test-Path -LiteralPath $Destination) { throw "Destination must not exist: $Relative" }
+  Copy-Item -LiteralPath $Source -Destination $Destination -Recurse
+}
+```
+
+Sau đó trỏ ba biến môi trường tới file/root private đã kiểm tra:
 
 ```powershell
 $env:IMP_LOOP206_CONTROL_CHECKPOINT = (Resolve-Path -LiteralPath (Join-Path $ArtifactRoot 'private/imp_control.pt')).Path

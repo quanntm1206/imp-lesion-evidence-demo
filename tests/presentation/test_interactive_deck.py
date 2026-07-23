@@ -688,6 +688,36 @@ def test_package_gate_binds_exact_navigation_relationship_targets() -> None:
     assert "Unexpected Back to Pipeline" in package
     assert "for ($number = 1; $number -le 4; $number++)" in package
     assert "for ($number = 11; $number -le $ExpectedSlideCount; $number++)" in package
+    assert "$html = ConvertTo-LfText -Value $html" in package
+
+
+def test_packager_normalizes_mixed_newlines_to_lf() -> None:
+    powershell = shutil.which("powershell") or shutil.which("pwsh")
+    assert powershell is not None, "PowerShell is required for packaging tests"
+    command = f"""
+. {_powershell_literal(PUBLISH_TRANSACTION)}
+$value = "a`r`nb`rc`n"
+$bytes = [Text.Encoding]::UTF8.GetBytes((ConvertTo-LfText -Value $value))
+[BitConverter]::ToString($bytes)
+"""
+    result = subprocess.run(
+        [
+            powershell,
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            command,
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "61-0A-62-0A-63-0A"
 
 
 def test_pptx_builder_renders_challenges_in_source_order() -> None:

@@ -1,5 +1,12 @@
 Set-StrictMode -Version Latest
 
+function ConvertTo-LfText {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Value)
+
+    $Value.Replace("`r`n", "`n").Replace("`r", "`n")
+}
+
 function New-BlockedDeckManifest {
     [CmdletBinding()]
     param(

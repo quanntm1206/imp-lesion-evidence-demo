@@ -327,6 +327,7 @@ $script = $script.Replace('"assets/loop206-delta.png"', '"' + $deltaUri + '"')
 $script = $script.Replace('"assets/qualitative-demo-middle.png"', '"' + $demoMiddleUri + '"')
 $html = $html.Replace('<link rel="stylesheet" href="deck.css">', "<style>`n$css`n</style>")
 $html = $html.Replace('<script src="deck.js" defer></script>', "<script>`n$script`n</script>")
+$html = ConvertTo-LfText -Value $html
 
 if (-not (Test-Path -LiteralPath $pptxPath)) {
     throw "PPTX not found: $pptxPath"
