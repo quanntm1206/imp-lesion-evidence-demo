@@ -32,6 +32,7 @@ $GeneratedPaperDir = Join-Path $ReceiptDir 'generated-paper'
 $PaperDir = Join-Path $ProjectRoot 'paper/clean_v3_loop206'
 $Registry = Join-Path $ProjectRoot 'demo/data/evidence_registry.json'
 $PreviousProjectEnvironment = $env:UV_PROJECT_ENVIRONMENT
+$PreviousPdfInfo = $env:IMP_PDFINFO_EXE
 
 try {
     Set-Location $ProjectRoot
@@ -50,6 +51,18 @@ try {
     } else {
         uv sync --locked --python 3.12 --extra dev --extra analysis --extra demo
         Assert-LastExitCode 'uv dependency sync'
+    }
+
+    if ([string]::IsNullOrWhiteSpace($env:IMP_PDFINFO_EXE)) {
+        $PdfInfoCommand = Get-Command pdfinfo.exe -CommandType Application -ErrorAction SilentlyContinue
+        if ($null -eq $PdfInfoCommand) {
+            throw 'A trusted pdfinfo executable is required. Install Poppler or MiKTeX, then retry.'
+        }
+        $env:IMP_PDFINFO_EXE = (Resolve-Path -LiteralPath $PdfInfoCommand.Source).Path
+    }
+    if (-not [IO.Path]::IsPathRooted($env:IMP_PDFINFO_EXE) -or
+        -not (Test-Path -LiteralPath $env:IMP_PDFINFO_EXE -PathType Leaf)) {
+        throw 'Trusted pdfinfo executable unavailable.'
     }
 
     New-Item -ItemType Directory -Force -Path $ReceiptDir | Out-Null
@@ -111,5 +124,6 @@ try {
     }
 } finally {
     $env:UV_PROJECT_ENVIRONMENT = $PreviousProjectEnvironment
+    $env:IMP_PDFINFO_EXE = $PreviousPdfInfo
     Set-Location $ProjectRoot
 }

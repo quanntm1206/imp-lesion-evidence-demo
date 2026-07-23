@@ -155,26 +155,22 @@ def test_preserve_sidecar_uses_unique_name_without_rm_and_journals_exact_name(
 
 def test_task7_uses_launcher_generated_owner_bound_container_names() -> None:
     script = _read("scripts/demo/run_sidecar.ps1")
-    brief = _read(".superpowers/sdd/task-7-brief.md")
-    plan = _read(
-        "docs/superpowers/plans/2026-07-22-professor-audit-remediation.md"
-    )
     runbook = _read("docs/runbooks/demo-operations.md")
+    deployment_guide = _read("DEMO_DEPLOYMENT_GUIDE.md")
     top_level_parameters = script[: script.index("$ErrorActionPreference")]
 
     assert "[string]$ContainerName" not in top_level_parameters
-    for document in (brief, plan, runbook):
+    for document in (runbook, deployment_guide):
         assert "-ContainerName" not in document
-        assert "owner-bound" in document.lower()
+    assert "owner-bound" in runbook.lower()
     assert "New-SidecarContainerName -RunId $RunId -OwnerToken $ownerToken" in script
 
 
 def test_task7_documented_run_id_expression_passes_exact_validators() -> None:
     documents = (
-        _read(".superpowers/sdd/task-7-brief.md"),
-        _read("docs/superpowers/plans/2026-07-22-professor-audit-remediation.md"),
         _read("docs/runbooks/demo-operations.md"),
         _read("docs/runbooks/two-machine-delivery.md"),
+        _read("DEMO_DEPLOYMENT_GUIDE.md"),
     )
     expected = (
         "$RunId = (Get-Date).ToUniversalTime()"
@@ -183,8 +179,6 @@ def test_task7_documented_run_id_expression_passes_exact_validators() -> None:
     for document in documents:
         assert expected in document
 
-    expression = re.search(r"`(\$RunId = [^`]+ToLowerInvariant\(\))`", documents[0])
-    assert expression is not None
     for script in (
         "scripts/demo/run_sidecar.ps1",
         "scripts/demo/run_demo.ps1",
@@ -192,7 +186,7 @@ def test_task7_documented_run_id_expression_passes_exact_validators() -> None:
         "scripts/demo/stop_demo.ps1",
     ):
         body = (
-            f"{expression.group(1)}; "
+            f"{expected}; "
             "$validated=Assert-PreserveRunId -RunId $RunId; "
             "$uppercaseRejected=$false; try { "
             "Assert-PreserveRunId -RunId '20260722T1234561234567Z' | Out-Null "
@@ -342,7 +336,7 @@ def test_preserved_check_only_journal_failure_fails_closed() -> None:
 def test_run_demo_uses_authorized_checkpoint_environment_overrides() -> None:
     script = _read("scripts/demo/run_demo.ps1")
     app = _read("src/lesion_robustness/demo/app.py")
-    brief = _read(".superpowers/sdd/task-7-brief.md")
+    deployment_guide = _read("DEMO_DEPLOYMENT_GUIDE.md")
     top_level_parameters = script[: script.index("$ErrorActionPreference")]
 
     for name in (
@@ -355,7 +349,7 @@ def test_run_demo_uses_authorized_checkpoint_environment_overrides() -> None:
     assert "environ=model_environment" in app
     assert "[string]$PythonExe" in top_level_parameters
     assert "-PythonExe $resolvedPython" in script[script.rindex("if ($MyInvocation"):]
-    assert brief.count("-PythonExe $PythonExe") >= 2
+    assert deployment_guide.count("-PythonExe $PythonExe") >= 2
     assert "Resolve-DemoPythonApplication" in script
     assert "@preflightArguments" in script
     assert "@smokeArguments" in script
@@ -542,6 +536,8 @@ def test_preserve_workflow_requires_and_propagates_one_run_id() -> None:
 
 
 def _powershell() -> str:
+    if os.name != "nt":
+        pytest.skip("Windows-only launcher execution; local release gate required")
     shell = shutil.which("powershell") or shutil.which("pwsh")
     if shell is None:
         pytest.skip("PowerShell unavailable")

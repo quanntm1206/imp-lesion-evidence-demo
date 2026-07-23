@@ -265,3 +265,10 @@ def test_teacher_demo_guide_is_linked_and_self_deployable() -> None:
     assert stale_image not in _read("docs/runbooks/demo-operations.md")
     assert not re.search(r"(?i)trycloudflare\.com", guide)
     assert not re.search(r"(?<![A-Za-z])[A-Za-z]:[\\/]", guide)
+    assert "git switch main" in guide
+    assert "IMP_DEMO_ARTIFACT_MANIFEST" in guide
+    assert "GetFullPath" in guide
+    assert "StartsWith" in guide
+    assert "Compare-Object" in guide
+    assert ".Replace('\\', '/')" in guide
+    assert "Get-ChildItem -LiteralPath $ArtifactRoot -Force -Recurse -File" in guide

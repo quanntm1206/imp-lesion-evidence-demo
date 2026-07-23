@@ -20,6 +20,11 @@ from lesion_robustness.release_manifest import load_release_manifest
 
 
 ROOT = Path(__file__).resolve().parents[2]
+DATASET_INDEX = ROOT / "demo_runtime/loop206_dataset_index.json"
+requires_external_runtime_assets = pytest.mark.skipif(
+    not DATASET_INDEX.is_file(),
+    reason="external runtime assets; local release gate required",
+)
 
 
 def _windows_path(*parts: str) -> Path:
@@ -115,6 +120,7 @@ def public_fixture(tmp_path: Path, *, drift: str | None = None) -> tuple[object,
     return registry, index, root
 
 
+@requires_external_runtime_assets
 def test_public_loader_requires_index_identity_raw_and_rgb_hashes(tmp_path: Path) -> None:
     registry = load_release_manifest(ROOT / "release/imp_release_manifest.json")
     index = CANONICAL_INDEX
@@ -125,6 +131,7 @@ def test_public_loader_requires_index_identity_raw_and_rgb_hashes(tmp_path: Path
     assert all(sample.evidence.ground_truth_not_loaded is True for sample in samples.values())
 
 
+@requires_external_runtime_assets
 def test_public_selection_recomputes_exact_universe_rule_and_hash(tmp_path: Path) -> None:
     registry = load_release_manifest(ROOT / "release/imp_release_manifest.json")
     index = CANONICAL_INDEX
@@ -204,6 +211,7 @@ def test_public_sample_contract_binds_live_roles_and_boundary_by_hash() -> None:
     )
 
 
+@requires_external_runtime_assets
 def test_public_loader_never_reads_or_returns_a_mask(tmp_path: Path) -> None:
     registry = load_release_manifest(ROOT / "release/imp_release_manifest.json")
     index = CANONICAL_INDEX
@@ -307,6 +315,7 @@ def test_public_evidence_requires_exact_metadata_and_exposure() -> None:
     assert validate_live_input_evidence(evidence) is evidence
 
 
+@requires_external_runtime_assets
 def test_actual_canonical_public_samples_match_base_metadata_and_images() -> None:
     manifest = load_release_manifest(ROOT / "release/imp_release_manifest.json")
     index = CANONICAL_INDEX

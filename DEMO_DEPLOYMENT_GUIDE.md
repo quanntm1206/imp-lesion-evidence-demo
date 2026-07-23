@@ -24,14 +24,12 @@ Demo chạy tuần tự trên cùng một ảnh RGB:
 - NVIDIA driver, Docker Desktop với WSL2 và GPU support.
 - Git, GitHub CLI, `uv`, Python 3.12.
 - `cloudflared` chỉ cần khi muốn mở link tạm thời ra Internet.
-- Quyền truy cập private repository
-  `quanntm1206/imp-lesion-evidence-demo`.
+- Quyền tải public repository `quanntm1206/imp-lesion-evidence-demo`.
 
 Kiểm tra công cụ trong PowerShell:
 
 ```powershell
 git --version
-gh auth status
 uv --version
 docker version
 nvidia-smi
@@ -40,18 +38,18 @@ cloudflared --version
 
 Nếu không dùng Cloudflare, lỗi ở lệnh `cloudflared --version` có thể bỏ qua.
 
-## 3. Clone đúng branch
+## 3. Clone đúng default branch
 
 ```powershell
-gh repo view quanntm1206/imp-lesion-evidence-demo --json isPrivate,url
-gh repo clone quanntm1206/imp-lesion-evidence-demo
+git clone https://github.com/quanntm1206/imp-lesion-evidence-demo.git
 Set-Location imp-lesion-evidence-demo
-git switch codex/dual-live-demo
+git switch main
 git rev-parse HEAD
 ```
 
-Kết quả `isPrivate` phải là `true`. Ghi lại commit SHA để báo lại nhóm nếu có
-lỗi.
+Repository phải có remote
+`https://github.com/quanntm1206/imp-lesion-evidence-demo.git` và branch
+`main`. Ghi lại commit SHA để báo lại nhóm nếu có lỗi.
 
 ## 4. Cài môi trường demo
 
@@ -71,7 +69,9 @@ Gửi commit SHA, GPU, driver và lỗi cho nhóm để tạo một runtime đã
 
 ## 5. Gói private artifact bắt buộc
 
-Giải nén phần `repository-overlay` vào thư mục clone và giữ nguyên cấu trúc.
+Nhận `sha256-manifest.json` qua kênh riêng, tách khỏi archive. Nếu nhận archive,
+kiểm SHA-256 của chính archive theo digest do nhóm gửi riêng trước khi giải nén.
+Chỉ giải nén vào một thư mục mới, rỗng; chưa chép `repository-overlay` vào clone.
 Gói bàn giao tối thiểu phải tạo ra các đường dẫn sau:
 
 Hai entry bắt buộc là `demo_runtime/loop206_dataset_index.json` và bundle
@@ -108,24 +108,38 @@ Không commit hoặc upload các file trên lên GitHub.
 
 ### Kiểm tra manifest bàn giao
 
-Đặt biến `IMP_DEMO_ARTIFACT_ROOT` tới thư mục gốc của gói nhận được:
+Đặt `IMP_DEMO_ARTIFACT_ROOT` tới thư mục mới giải nén và
+`IMP_DEMO_ARTIFACT_MANIFEST` tới manifest nhận riêng. Đoạn kiểm tra dưới đây
+chặn path tuyệt đối, cả hai kiểu dấu phân cách, traversal, reparse point và file
+thừa trước khi bất kỳ artifact nào được chép vào repository:
 
 ```powershell
 $ArtifactRoot = (Resolve-Path -LiteralPath $env:IMP_DEMO_ARTIFACT_ROOT).Path
-$ManifestPath = Join-Path $ArtifactRoot 'sha256-manifest.json'
+$ManifestPath = (Resolve-Path -LiteralPath $env:IMP_DEMO_ARTIFACT_MANIFEST).Path
 $Manifest = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json
+$RootPrefix = $ArtifactRoot.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+$Reparse = Get-ChildItem -LiteralPath $ArtifactRoot -Force -Recurse | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }
+if ($Reparse) { throw 'Artifact package contains a reparse point' }
+$Expected = @()
 foreach ($Entry in $Manifest.files) {
-  $Relative = [string]$Entry.path
-  if ([IO.Path]::IsPathRooted($Relative) -or $Relative -match '(^|/)\.\.(/|$)') { throw "Unsafe artifact path: $Relative" }
-  $File = Join-Path $ArtifactRoot $Relative.Replace('/', '\')
+  $Relative = ([string]$Entry.path).Replace('\', '/')
+  $Parts = @($Relative.Split('/'))
+  if ([IO.Path]::IsPathRooted($Relative) -or $Relative.Contains(':') -or $Parts -contains '..' -or $Parts -contains '.' -or $Parts -contains '') { throw "Unsafe artifact path: $Relative" }
+  $File = [IO.Path]::GetFullPath((Join-Path $ArtifactRoot $Relative.Replace('/', [IO.Path]::DirectorySeparatorChar)))
+  if (-not $File.StartsWith($RootPrefix, [StringComparison]::OrdinalIgnoreCase)) { throw "Artifact escapes package root: $Relative" }
   if (-not (Test-Path -LiteralPath $File -PathType Leaf)) { throw "Missing artifact: $Relative" }
   if ((Get-Item -LiteralPath $File).Length -ne [int64]$Entry.bytes) { throw "Size mismatch: $Relative" }
   if ((Get-FileHash -LiteralPath $File -Algorithm SHA256).Hash.ToLowerInvariant() -ne ([string]$Entry.sha256).ToLowerInvariant()) { throw "SHA-256 mismatch: $Relative" }
+  $Expected += $Relative
 }
+$Actual = @(Get-ChildItem -LiteralPath $ArtifactRoot -Force -Recurse -File | ForEach-Object { [IO.Path]::GetRelativePath($ArtifactRoot, $_.FullName).Replace('\', '/') })
+$ClosureDiff = Compare-Object ($Expected | Sort-Object -Unique) ($Actual | Sort-Object -Unique)
+if ($ClosureDiff) { throw 'Artifact package closure mismatch: missing or extra files' }
 'artifact_manifest=passed'
 ```
 
-Sau đó trỏ ba biến môi trường tới file/root private đã kiểm tra:
+Chỉ sau khi `artifact_manifest=passed`, chép `repository-overlay` vào clone. Sau
+đó trỏ ba biến môi trường tới file/root private đã kiểm tra:
 
 ```powershell
 $env:IMP_LOOP206_CONTROL_CHECKPOINT = (Resolve-Path -LiteralPath (Join-Path $ArtifactRoot 'private/imp_control.pt')).Path

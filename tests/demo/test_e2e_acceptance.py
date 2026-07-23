@@ -9,6 +9,7 @@ import socket
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
+import pytest
 
 from lesion_robustness.demo.dual_live_protocol import (
     CHECKPOINT_SHA256,
@@ -24,6 +25,15 @@ from tests.demo.support.one_shot_nnunet_client import OneShotTimeoutClient
 
 
 ROOT = Path(__file__).resolve().parents[2]
+ACCEPTANCE_PACKET = (
+    ROOT
+    / "demo_runtime/acceptance/imp.dual_live.e2e.v1"
+    / "20260722T233947051Z/acceptance.json"
+)
+requires_external_runtime_assets = pytest.mark.skipif(
+    not ACCEPTANCE_PACKET.is_file(),
+    reason="external runtime assets; local release gate required",
+)
 
 
 @dataclass(frozen=True)
@@ -259,12 +269,9 @@ def test_runtime_prerequisite_inventory_is_fail_closed_before_ports(tmp_path: Pa
     )
 
 
+@requires_external_runtime_assets
 def test_reported_blocked_packet_is_canonical_and_has_no_downstream_claims() -> None:
-    path = (
-        ROOT
-        / "demo_runtime/acceptance/imp.dual_live.e2e.v1"
-        / "20260722T233947051Z/acceptance.json"
-    )
+    path = ACCEPTANCE_PACKET
     raw = path.read_bytes()
     packet = json.loads(raw.decode("ascii"))
     canonical = (
@@ -290,6 +297,7 @@ def test_reported_blocked_packet_is_canonical_and_has_no_downstream_claims() -> 
     }.isdisjoint(packet)
 
 
+@requires_external_runtime_assets
 def test_blocked_runtime_ports_are_closed() -> None:
     for port in (7860, 7861, 7862):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:

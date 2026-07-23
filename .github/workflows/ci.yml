@@ -14,6 +14,7 @@ jobs:
     env:
       CUDA_VISIBLE_DEVICES: ""
       UV_NO_PROGRESS: "1"
+      IMP_PDFINFO_EXE: "/usr/bin/pdfinfo"
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,6 +38,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             latexmk poppler-utils texlive-bibtex-extra texlive-fonts-recommended \
             texlive-latex-base texlive-latex-extra
+          test -x "$IMP_PDFINFO_EXE"
+          test ! -L "$IMP_PDFINFO_EXE"
 
       - name: Run demo tests
         run: |
@@ -83,8 +86,12 @@ jobs:
 
           pdf = Path("main.pdf")
           data = pdf.read_bytes()
+          pdfinfo = Path(os.environ["IMP_PDFINFO_EXE"])
+          if not pdfinfo.is_absolute() or not pdfinfo.is_file() or pdfinfo.is_symlink():
+              raise RuntimeError("trusted pdfinfo executable unavailable")
           inspected = subprocess.run(
               ["pdfinfo", str(pdf)],
+              executable=str(pdfinfo),
               check=True,
               capture_output=True,
               text=True,

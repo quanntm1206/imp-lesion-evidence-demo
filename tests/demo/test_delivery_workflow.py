@@ -31,6 +31,9 @@ def test_windows_bootstrap_preserves_cuda_overlay_and_runs_delivery_checks() -> 
     assert "https://download.pytorch.org/whl/cu130/" in script
     assert "torch.cuda.is_available()" in script
     assert "uv run --no-sync" in script
+    assert "Get-Command pdfinfo.exe" in script
+    assert "IMP_PDFINFO_EXE" in script
+    assert "trusted pdfinfo executable" in script
     assert "python -m pytest tests/demo" in script
     assert "build_clean_v3_tables.py" in script
     assert "$GeneratedPaperDir" in script
@@ -54,6 +57,7 @@ def test_ci_is_cpu_only_reproducible_and_uploads_receipts() -> None:
     job = workflow["jobs"]["delivery"]
     assert job["runs-on"] == "ubuntu-latest"
     assert job["env"]["CUDA_VISIBLE_DEVICES"] == ""
+    assert job["env"]["IMP_PDFINFO_EXE"] == "/usr/bin/pdfinfo"
 
     uses = [step["uses"] for step in job["steps"] if "uses" in step]
     assert uses
@@ -75,6 +79,9 @@ def test_ci_is_cpu_only_reproducible_and_uploads_receipts() -> None:
     assert "latexmk -C" in commands
     assert "latexmk -pdf" in commands
     assert "pdfinfo" in commands
+    assert 'test -x "$IMP_PDFINFO_EXE"' in commands
+    assert 'test ! -L "$IMP_PDFINFO_EXE"' in commands
+    assert "executable=str(pdfinfo)" in commands
     assert "TeX runner unavailable; paper compilation skipped" not in commands
     for receipt_field in (
         "GITHUB_SHA",
@@ -126,13 +133,18 @@ def test_runbook_and_readme_define_private_two_machine_handoff() -> None:
     assert "bootstrap_windows.ps1" in readme
     assert "/paper/clean_v3_loop206/main.pdf" in _read(".gitignore")
     attributes = _read(".gitattributes")
+    attribute_lines = attributes.splitlines()
     for pattern in (
+        "*.json text eol=lf",
+        "*.html text eol=lf",
+        "*.yaml text eol=lf",
+        "*.yml text eol=lf",
         "demo/data/evidence_registry.json text eol=lf",
         "paper/clean_v3_loop206/**/*.py text eol=lf",
         "paper/clean_v3_loop206/**/*.json text eol=lf",
         "paper/clean_v3_loop206/**/*.tex text eol=lf",
     ):
-        assert pattern in attributes
+        assert pattern in attribute_lines
     assert "qualitative_demo_receipts.json text eol=crlf" not in attributes
 
 

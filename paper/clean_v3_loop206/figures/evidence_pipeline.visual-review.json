@@ -1,0 +1,20 @@
+{
+  "schema_version": "imp.figure_visual_review.v1",
+  "reviewed_utc": "2026-07-22T07:31:18Z",
+  "status": "passed",
+  "preview_path": "figures/qa/evidence_pipeline-review-20260722-wave2.png",
+  "preview_sha256": "0d99d154a77c1b65cfe489c5e89d355887f582e46b8ae6a6656c9d80d3ce886b",
+  "editable_source_path": "figures/evidence_pipeline.drawio",
+  "editable_source_sha256": "7de48f511369fd08a09d26dee781eddff1b94357dd155047c98f6ef5932f87ab",
+  "generation_source_path": "scripts/paper/generate_evidence_pipeline.py",
+  "generation_source_sha256": "03ad60e8ae3973713af71bb03cfb3572f5a2b3ce7d2bfb234b504d91ad70d19c",
+  "pdf_path": "figures/evidence_pipeline.pdf",
+  "pdf_sha256": "6ce9189e6118bde22156ba8786d86df08b990dbe945c9e5d2a8be12d76322dd0",
+  "checks": [
+    "exact_live_and_paper_model_ids_visible",
+    "no_clipped_labels",
+    "no_overlapping_labels",
+    "arrows_intact",
+    "no_off_canvas_content"
+  ]
+}

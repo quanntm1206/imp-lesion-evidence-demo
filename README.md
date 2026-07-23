@@ -2,7 +2,7 @@
 
 Research authors: Nguyễn Trần Minh Quân and Nguyễn Đức Lân.
 
-This private repository is an evidence-bounded paper/demo package and a
+This public repository is an evidence-bounded paper/demo package and a
 **reproducibility scaffold**. It is not a clone-runnable training release. The
 main research system is the **IMP MiT-B3 U-Net**: a MiT-B3 encoder coupled to a
 U-Net decoder. The live comparison uses a **reconstructed nnU-Net** runtime.
@@ -46,6 +46,10 @@ Run the complete tracked test suite:
 ```powershell
 .venv-win\Scripts\python.exe -m pytest -q
 ```
+
+Tests that need separately transferred runtime artifacts skip with
+`external runtime assets; local release gate required`. PowerShell launcher
+execution tests run on Windows; static launcher checks remain portable.
 
 Rebuild the paper after the evidence audit passes:
 
@@ -132,6 +136,16 @@ with exit code `2`; this is the expected pending state, not a scientific result.
 | `paper/clean_v3_loop206/` | LaTeX manuscript and manifest-bound artifacts |
 | `presentation/interactive/` | Interactive HTML deck source |
 | `tests/` | Portable contract and behavior checks |
+
+## Defense package
+
+- Interactive deck: [`outputs/imp-lesion-evidence-defense.html`](outputs/imp-lesion-evidence-defense.html)
+- PowerPoint: [`outputs/imp-lesion-evidence-defense.pptx`](outputs/imp-lesion-evidence-defense.pptx)
+- Slide PDF: [`outputs/imp-lesion-evidence-defense.pdf`](outputs/imp-lesion-evidence-defense.pdf)
+- Paper PDF: [`paper/clean_v3_loop206/main.pdf`](paper/clean_v3_loop206/main.pdf)
+- Vietnamese talk script: [`docs/presentation/defense-presentation-script-vi.md`](docs/presentation/defense-presentation-script-vi.md)
+- Lecturer Q&A: [`docs/presentation/lecturer-questions-and-answers-vi.md`](docs/presentation/lecturer-questions-and-answers-vi.md)
+- Evidence status: [`reports/paper_revision/manuscript_readiness_audit.md`](reports/paper_revision/manuscript_readiness_audit.md)
 
 ## Artifact policy
 

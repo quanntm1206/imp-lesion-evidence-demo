@@ -29,10 +29,10 @@ def test_historical_professor_audits_are_not_current_release_evidence() -> None:
         header = "\n".join(text.splitlines()[:6])
         assert header.startswith("# HISTORICAL / SUPERSEDED")
         assert "must not be treated as current release evidence" in header
-        assert "20260722T233947051Z/acceptance.json" in header
-        assert "blocked_missing_prerequisite" in header
-        assert "browser/tunnel fields are intentionally absent" in header
-        assert "paper release projection is stale" in header
-        assert "package_state=incomplete_blocked" in header
-        assert "stale_rebuild_blocked" in header
-        assert "package_state=complete" not in header
+        assert "Authoritative current state" in header
+        assert "status=current" in header
+        assert "package_state=complete" in header
+        assert "17 slides" in header
+        assert "435606d5adc296be57405c65a9c725af3dff96c15f9aabf7ac0924d06387a264" in header
+        assert "unverified/blocked" in header
+        assert "inspection snapshot" in header

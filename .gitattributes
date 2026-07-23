@@ -1,3 +1,7 @@
+*.json text eol=lf
+*.html text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
 demo/data/evidence_registry.json text eol=lf
 paper/clean_v3_loop206/**/*.py text eol=lf
 paper/clean_v3_loop206/**/*.json text eol=lf

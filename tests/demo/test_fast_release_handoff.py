@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from scripts.demo.write_fast_release_handoff import build_packet
+import lesion_robustness.demo.fast_release_handoff as handoff_module
 
 from lesion_robustness.demo.fast_release_handoff import (
     DEFERRED_JOBS,
@@ -18,6 +19,44 @@ from lesion_robustness.demo.fast_release_handoff import (
 ROOT = Path(__file__).resolve().parents[2]
 RUN_ID = "20260723T033658169Z"
 NEW_HANDOFF_RUN_ID = "20260723T040700000Z"
+_ACCEPTANCE_SHA256 = ""
+
+
+@pytest.fixture(autouse=True)
+def _portable_acceptance_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, Path]:
+    payload = {
+        "artifact_class": "optional_external_smoke_deferral",
+        "browser": "not_run",
+        "claim_status": "unpromoted",
+        "cloudflare": "deferred_external_dependency",
+        "reason": "Required private runtime prerequisites are unavailable.",
+        "run_id": RUN_ID,
+        "runtime": "blocked_missing_prerequisite",
+        "schema_version": "imp.dual_live.e2e.v1",
+        "status": "blocked",
+    }
+    root = tmp_path / "portable-project"
+    acceptance = (
+        root
+        / "demo_runtime/acceptance/imp.dual_live.e2e.v1"
+        / RUN_ID
+        / "acceptance.json"
+    )
+    acceptance.parent.mkdir(parents=True)
+    _write(acceptance, payload)
+    visual_review = root / "visual-review.json"
+    _write(visual_review, {"visual_qa": "pass"})
+    def resolve_acceptance(expected_hash: str) -> Path:
+        if expected_hash != hashlib.sha256(acceptance.read_bytes()).hexdigest():
+            raise ValueError("handoff acceptance packet missing or ambiguous")
+        return acceptance
+
+    monkeypatch.setattr(handoff_module, "_acceptance_path", resolve_acceptance)
+    global _ACCEPTANCE_SHA256
+    _ACCEPTANCE_SHA256 = hashlib.sha256(acceptance.read_bytes()).hexdigest()
+    return acceptance, visual_review
 
 
 def _sha(path: str) -> str:
@@ -36,9 +75,7 @@ def _packet() -> dict[str, object]:
         "html_sha256": _sha("outputs/imp-lesion-evidence-defense.html"),
         "pptx_sha256": _sha("outputs/imp-lesion-evidence-defense.pptx"),
         "presentation_pdf_sha256": _sha("outputs/imp-lesion-evidence-defense.pdf"),
-        "acceptance_packet_sha256": _sha(
-            f"demo_runtime/acceptance/imp.dual_live.e2e.v1/{RUN_ID}/acceptance.json"
-        ),
+        "acceptance_packet_sha256": _ACCEPTANCE_SHA256,
         "acceptance_status": "blocked",
         "visual_qa_status": "passed",
         "runtime_status": "blocked_missing_prerequisite",
@@ -147,15 +184,16 @@ def test_writer_is_canonical_and_refuses_byte_drift(tmp_path: Path) -> None:
 
 
 def test_cli_packet_preserves_blocked_runtime_with_independent_handoff_run(
-    tmp_path: Path,
+    tmp_path: Path, _portable_acceptance_root: tuple[Path, Path],
 ) -> None:
+    acceptance_packet, visual_review = _portable_acceptance_root
     packet = build_packet(
         run_id=NEW_HANDOFF_RUN_ID,
         release_manifest=ROOT / "release/imp_release_manifest.json",
         paper_manifest=ROOT / "paper/clean_v3_loop206/artifact_manifest.json",
         presentation_manifest=ROOT / "outputs/imp-lesion-evidence-defense-manifest.json",
-        acceptance_packet=ROOT / f"demo_runtime/acceptance/imp.dual_live.e2e.v1/{RUN_ID}/acceptance.json",
-        visual_review=ROOT / "outputs/visual-evidence/visual-review.json",
+        acceptance_packet=acceptance_packet,
+        visual_review=visual_review,
     )
 
     path = write_fast_release_handoff(tmp_path, packet)

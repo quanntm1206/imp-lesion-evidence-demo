@@ -7,10 +7,10 @@ import pytest
 from lesion_robustness.demo.preserve_runtime import PreserveJournal
 
 
-def test_task7_timestamp_and_max_run_ids_fit_current_worktree_budget() -> None:
-    runtime_root = Path(__file__).resolve().parents[2] / "demo_runtime"
+def test_task7_timestamp_and_max_run_ids_validate_independent_of_checkout_depth() -> None:
+    runtime_root = Path("demo_runtime")
     for run_id in ("20260722t1234561234567z", "a" * 128):
-        PreserveJournal.validate_path_budget(runtime_root, run_id)
+        PreserveJournal.validate_path_budget(runtime_root, run_id, windows=False)
 
 
 def test_preserve_journal_rejects_over_budget_windows_projection(tmp_path: Path) -> None:

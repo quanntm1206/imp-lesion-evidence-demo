@@ -25,6 +25,11 @@ SAMPLE_A = np.zeros((2, 2, 3), dtype=np.uint8)
 SAMPLE_B = np.ones((2, 2, 3), dtype=np.uint8)
 RUN_ID = "20260723t000000000z"
 ROOT = Path(__file__).resolve().parents[2]
+DATASET_INDEX = ROOT / "demo_runtime/loop206_dataset_index.json"
+requires_external_runtime_assets = pytest.mark.skipif(
+    not DATASET_INDEX.is_file(),
+    reason="external runtime assets; local release gate required",
+)
 CANONICAL_RGB_A = "68fa0dd008c8ac3e301be0495c00ee2df0ece31216165da7c62e441d71b835aa"
 CANONICAL_RGB_B = "0282de65b80464fce23b16995187bb10a6e89b52858b9408ea8b58ac183f2e9e"
 
@@ -392,6 +397,7 @@ def test_caller_constructed_probe_cannot_enter_verified_binding_factory() -> Non
         )
 
 
+@requires_external_runtime_assets
 def test_untampered_verified_binding_uses_issued_authority(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -434,6 +440,7 @@ def test_untampered_verified_binding_uses_issued_authority(
         "live_reparse",
     ],
 )
+@requires_external_runtime_assets
 def test_post_issuance_tamper_is_always_unpromoted(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
